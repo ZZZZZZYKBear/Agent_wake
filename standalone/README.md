@@ -72,7 +72,8 @@ token lives in `~/.agent-ping/hub.json` (override the directory with
 
 ## Wiring the wheel to the hub
 
-Create `~/.agent-ping/global.json`:
+The tray menu has **投递目标 → DSH 桥接 / 独立 Hub**; switching writes (or removes)
+`~/.agent-ping/global.json`:
 
 ```json
 { "endpoint": "http://127.0.0.1:47660" }
@@ -81,11 +82,19 @@ Create `~/.agent-ping/global.json`:
 The global overlay then posts every signal to that endpoint instead of the DSH
 bridge. When the endpoint matches the running hub (`~/.agent-ping/hub.json`),
 its token is picked up automatically; a remote endpoint needs an explicit
-`"token"` in the same file. Delete `global.json` to switch back to DSH.
+`"token"` in the same file. If the home directory is not writable, the override
+falls back to `AgentPingData\global.json` next to the executable.
+
+For scripts, the same switch without the tray:
+
+```powershell
+AgentPingCore.exe --no-sandbox --target=hub
+AgentPingCore.exe --no-sandbox --target=dsh
+```
 
 Because the hub is agent-agnostic, the inline screenshot data URL is dropped for
 hub sends (the `target.text` still carries the saved screenshot path); a test
-signal is about 600 bytes instead of ~150 KB.
+signal is under 1 KB instead of ~150 KB.
 
 To verify the whole path without opening the wheel:
 

@@ -92,11 +92,32 @@ function readHub() {
 }
 
 /**
- * Resolve where signals go. `~/.agent-ping/global.json` with an `endpoint`
- * opts into the standalone hub; without it the DSH loopback bridge is used.
+ * Config files that may hold the target override. The DSH home copy is the
+ * documented location; the app-data copy is a fallback for locked-down
+ * profiles where the home directory is not writable.
+ */
+function globalConfigFiles() {
+  const files = [path.join(agentPingHome(), "global.json")];
+  try {
+    files.push(path.join(app.getPath("userData"), "global.json"));
+  } catch {}
+  return files;
+}
+
+function readGlobalConfig() {
+  for (const file of globalConfigFiles()) {
+    const value = readJsonFile(file);
+    if (value) return value;
+  }
+  return {};
+}
+
+/**
+ * Resolve where signals go. A `global.json` with an `endpoint` opts into the
+ * standalone hub; without it the DSH loopback bridge is used.
  */
 function readTransport() {
-  const globalConfig = readJsonFile(path.join(agentPingHome(), "global.json")) || {};
+  const globalConfig = readGlobalConfig();
   const endpoint = typeof globalConfig.endpoint === "string"
     ? globalConfig.endpoint.trim().replace(/\/+$/, "")
     : "";
@@ -112,6 +133,39 @@ function readTransport() {
   const bridge = readBridge();
   if (bridge) return { kind: "dsh", base: "http://127.0.0.1:" + bridge.port, token: bridge.token };
   return null;
+}
+
+/** Switch the delivery target. `hub` needs a running hub (hub.json). */
+function setTransport(kind, reason = "manual") {
+  if (kind === "hub") {
+    const hub = readHub();
+    if (!hub) {
+      log("transport switch failed: no hub.json");
+      return { ok: false, error: "hub-not-running" };
+    }
+    const endpoint = "http://" + (hub.host || "127.0.0.1") + ":" + hub.port;
+    const payload = JSON.stringify({ endpoint }, null, 2);
+    let written = null;
+    for (const file of globalConfigFiles()) {
+      try {
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        fs.writeFileSync(file, payload, "utf8");
+        written = file;
+      } catch (error) {
+        log("transport write failed", file, error && error.code);
+      }
+    }
+    if (!written) return { ok: false, error: "write-failed" };
+    log("transport switched", { kind: "hub", endpoint, file: written, reason });
+    return { ok: true, kind: "hub" };
+  }
+  for (const file of globalConfigFiles()) {
+    try {
+      fs.unlinkSync(file);
+    } catch {}
+  }
+  log("transport switched", { kind: "dsh", reason });
+  return { ok: true, kind: "dsh" };
 }
 
 function request(target, method, pathname, body, timeoutMs = 2400) {
@@ -498,7 +552,31 @@ function updateTray() {
   const menu = Menu.buildFromTemplate([
     { label: "Agent Ping Global", enabled: false },
     { label: `${statusText}${queueText}`, enabled: false },
-    { label: `信号目标：${health.transport === "hub" ? "独立 Hub" : "DSH 桥接"}`, enabled: false },
+    {
+      label: `投递目标：${health.transport === "hub" ? "独立 Hub" : "DSH 桥接"}`,
+      submenu: [
+        {
+          label: "DSH 桥接",
+          type: "radio",
+          checked: health.transport !== "hub",
+          click: () => {
+            setTransport("dsh", "tray");
+            checkHealth().catch(() => {});
+          }
+        },
+        {
+          label: "独立 Hub",
+          type: "radio",
+          checked: health.transport === "hub",
+          enabled: Boolean(readHub()),
+          click: () => {
+            const result = setTransport("hub", "tray");
+            if (!result.ok) notify("Agent Ping", "先启动独立 hub：agent-ping hub");
+            checkHealth().catch(() => {});
+          }
+        }
+      ]
+    },
     ...(hotkeysSuppressed ? [{ label: "DSH 聚焦：快捷键由页面内轮盘处理", enabled: false }] : []),
     { type: "separator" },
     { label: `信号轮盘   ${activeKeys.ping || "未注册"}`, click: () => openAtPoint("ping", screen.getCursorScreenPoint()).catch(() => {}) },
@@ -573,6 +651,15 @@ ipcMain.handle("send-signal", async (event, payload) => {
 });
 
 app.whenReady().then(() => {
+  const targetArg = process.argv.find((arg) => arg.startsWith("--target="));
+  if (targetArg) {
+    const requested = targetArg.slice("--target=".length);
+    const result = setTransport(requested === "hub" ? "hub" : "dsh", "cli");
+    const transport = readTransport();
+    log("target-switch", { requested, ok: result.ok, transport: transport ? transport.kind : "none" });
+    app.quit();
+    return;
+  }
   if (process.argv.includes("--capture-test")) {
     const display = screen.getPrimaryDisplay();
     const point = screen.getCursorScreenPoint();
