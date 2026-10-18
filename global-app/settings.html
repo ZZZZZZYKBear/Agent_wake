@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agent Ping 设置</title>
+  <link rel="stylesheet" href="settings.css">
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <span class="mark">AP</span>
+      <div>
+        <h1>Agent Ping</h1>
+        <p>独立版设置 · agent-agnostic signal hub</p>
+      </div>
+    </div>
+    <button id="close" class="ghost">关闭</button>
+  </header>
+
+  <main>
+    <section class="card">
+      <div class="card-head">
+        <h2>投递目标</h2>
+        <span id="target-pill" class="pill">…</span>
+      </div>
+      <p class="muted">轮盘释放的信号最终发往哪里。</p>
+      <div class="segmented" role="radiogroup" aria-label="投递目标">
+        <button type="button" role="radio" data-target="dsh">DSH 桥接</button>
+        <button type="button" role="radio" data-target="hub">独立 Hub</button>
+      </div>
+      <p class="hint" id="target-hint"></p>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h2>独立 Hub</h2>
+        <span id="hub-pill" class="pill">…</span>
+      </div>
+      <div class="kv"><span>地址</span><code id="hub-endpoint">—</code></div>
+      <div class="row">
+        <button type="button" id="hub-start">启动 Hub</button>
+        <button type="button" id="hub-stop" class="ghost" disabled>停止</button>
+        <button type="button" id="hub-copy" class="ghost">复制地址</button>
+      </div>
+      <p class="hint">Hub 是本地信号总线：任意 agent 都能用 <code>agent-ping next</code> 或 webhook 消费。启动后会自动把投递目标切到它。</p>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><h2>接入 CLI Agent</h2></div>
+      <p class="muted">在终端里用 attach 启动 agent，信号会被键入它的输入行。</p>
+      <div class="cmd"><code>agent-ping attach codex</code><button type="button" data-copy="agent-ping attach codex">复制</button></div>
+      <div class="cmd"><code>agent-ping attach claude</code><button type="button" data-copy="agent-ping attach claude">复制</button></div>
+      <p class="hint">需要先在 <code>standalone/</code> 里执行 <code>npm install</code>（node-pty）。</p>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><h2>启动与快捷键</h2></div>
+      <label class="toggle">
+        <input type="checkbox" id="autostart">
+        <span>开机自动启动</span>
+      </label>
+      <div class="keys" id="keys"></div>
+    </section>
+  </main>
+
+  <footer>
+    <span id="version" class="muted"></span>
+    <span id="paths" class="muted"></span>
+  </footer>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script src="settings.js"></script>
+</body>
+</html>

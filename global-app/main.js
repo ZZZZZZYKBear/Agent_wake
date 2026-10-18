@@ -8,12 +8,14 @@ const {
   screen,
   nativeImage,
   Notification,
-  dialog
+  dialog,
+  clipboard
 } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
 const os = require("node:os");
 const http = require("node:http");
+const { pathToFileURL } = require("node:url");
 const { captureTarget } = require("./capture");
 
 const APP_ID = "com.deepseek.agentping.global";
@@ -40,6 +42,8 @@ const SETTINGS_KEY = "Shift+Alt+P";
 const FALLBACK_KEYS = { ping: "Shift+Alt+W", emote: "Shift+Alt+R", settings: "Shift+Alt+O" };
 
 let tray = null;
+let settingsWindow = null;
+let embeddedHub = null;
 let currentWindow = null;
 let currentDisplayId = null;
 let hideTimer = null;
@@ -123,6 +127,9 @@ function readTransport() {
     : "";
   if (endpoint) {
     let token = typeof globalConfig.token === "string" ? globalConfig.token : "";
+    if (!token && embeddedHub && endpoint === "http://127.0.0.1:" + embeddedHub.port) {
+      token = embeddedHub.token;
+    }
     const hub = readHub();
     if (!token && hub) {
       const hubUrl = "http://" + (hub.host || "127.0.0.1") + ":" + hub.port;
@@ -138,7 +145,7 @@ function readTransport() {
 /** Switch the delivery target. `hub` needs a running hub (hub.json). */
 function setTransport(kind, reason = "manual") {
   if (kind === "hub") {
-    const hub = readHub();
+    const hub = embeddedHub || readHub();
     if (!hub) {
       log("transport switch failed: no hub.json");
       return { ok: false, error: "hub-not-running" };
@@ -167,6 +174,144 @@ function setTransport(kind, reason = "manual") {
   log("transport switched", { kind: "dsh", reason });
   return { ok: true, kind: "dsh" };
 }
+
+function hubEndpoint(config) {
+  return "http://" + (config.host || "127.0.0.1") + ":" + config.port;
+}
+
+async function probeHub() {
+  const config = readHub();
+  if (!config) return null;
+  const result = await request({ kind: "hub", base: hubEndpoint(config), token: config.token }, "GET", "/health");
+  if (!result.ok || !result.data || result.data.service !== "agent-ping-hub") return null;
+  return { port: config.port, host: config.host || "127.0.0.1", token: config.token, embedded: false };
+}
+
+async function hubInfo() {
+  if (embeddedHub) return { port: embeddedHub.port, host: "127.0.0.1", token: embeddedHub.token, embedded: true };
+  return probeHub();
+}
+
+/** Start the hub inside the tray app unless another one is already running. */
+async function startHubFromApp() {
+  if (embeddedHub) return { ok: true, hub: await hubInfo() };
+  const external = await probeHub();
+  if (external) return { ok: true, hub: external };
+  try {
+    const mod = await import(pathToFileURL(path.join(__dirname, "hub.mjs")).href);
+    const hub = await mod.startHub({ port: 47660, log });
+    embeddedHub = { port: hub.port, token: hub.token, close: hub.close };
+    log("hub started", { port: hub.port, embedded: true });
+    return { ok: true, hub: await hubInfo() };
+  } catch (error) {
+    log("hub start failed", error && error.message);
+    return { ok: false, error: error && error.message };
+  }
+}
+
+function stopHubFromApp() {
+  if (!embeddedHub) return { ok: false, error: "not-embedded" };
+  const port = embeddedHub.port;
+  try {
+    embeddedHub.close();
+  } catch {}
+  embeddedHub = null;
+  log("hub stopped", { port });
+  return { ok: true };
+}
+
+async function settingsState() {
+  const hub = await hubInfo();
+  return {
+    version: app.getVersion(),
+    target: (readTransport() || {}).kind || "none",
+    hub: hub
+      ? { running: true, port: hub.port, endpoint: hubEndpoint(hub), embedded: hub.embedded }
+      : { running: false, port: 0, endpoint: "", embedded: false },
+    autostart: Boolean(app.getLoginItemSettings().openAtLogin),
+    hotkeys: { ...activeKeys },
+    paths: { globalConfig: globalConfigFiles()[0], hubConfig: path.join(agentPingHome(), "hub.json") }
+  };
+}
+
+function openAppSettings() {
+  if (settingsWindow && !settingsWindow.isDestroyed()) {
+    settingsWindow.show();
+    settingsWindow.focus();
+    return settingsWindow;
+  }
+  const area = screen.getPrimaryDisplay().workArea;
+  const width = Math.min(820, Math.max(560, area.width - 40));
+  const height = Math.min(700, Math.max(480, area.height - 40));
+  settingsWindow = new BrowserWindow({
+    x: Math.round(area.x + (area.width - width) / 2),
+    y: Math.round(area.y + (area.height - height) / 2),
+    width,
+    height,
+    minWidth: 620,
+    minHeight: 480,
+    title: "Agent Ping 设置",
+    backgroundColor: "#070c12",
+    autoHideMenuBar: true,
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, "settings-preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false
+    }
+  });
+  settingsWindow.once("ready-to-show", () => {
+    if (settingsWindow) settingsWindow.show();
+  });
+  settingsWindow.on("closed", () => {
+    settingsWindow = null;
+  });
+  settingsWindow.loadFile(path.join(__dirname, "settings.html"));
+  return settingsWindow;
+}
+
+ipcMain.handle("settings:get", async () => settingsState());
+ipcMain.handle("settings:set-target", async (event, kind) => {
+  const result = setTransport(kind === "hub" ? "hub" : "dsh", "settings");
+  await checkHealth().catch(() => {});
+  return { ...result, state: await settingsState() };
+});
+ipcMain.handle("settings:start-hub", async () => {
+  const result = await startHubFromApp();
+  if (result.ok) setTransport("hub", "settings-hub");
+  await checkHealth().catch(() => {});
+  return { ...result, state: await settingsState() };
+});
+ipcMain.handle("settings:stop-hub", async () => {
+  const result = stopHubFromApp();
+  setTransport("dsh", "settings-hub");
+  await checkHealth().catch(() => {});
+  return { ...result, state: await settingsState() };
+});
+ipcMain.handle("settings:set-autostart", (event, value) => {
+  try {
+    app.setLoginItemSettings({
+      openAtLogin: Boolean(value),
+      path: process.execPath,
+      args: ["--no-sandbox"]
+    });
+    return Boolean(app.getLoginItemSettings().openAtLogin);
+  } catch {
+    return false;
+  }
+});
+ipcMain.handle("settings:copy", (event, text) => {
+  try {
+    clipboard.writeText(String(text || ""));
+    return true;
+  } catch {
+    return false;
+  }
+});
+ipcMain.on("settings:close", () => {
+  if (settingsWindow) settingsWindow.close();
+});
 
 function request(target, method, pathname, body, timeoutMs = 2400) {
   return new Promise((resolve) => {
@@ -579,6 +724,7 @@ function updateTray() {
     },
     ...(hotkeysSuppressed ? [{ label: "DSH 聚焦：快捷键由页面内轮盘处理", enabled: false }] : []),
     { type: "separator" },
+    { label: "应用设置…", click: () => openAppSettings() },
     { label: `信号轮盘   ${activeKeys.ping || "未注册"}`, click: () => openAtPoint("ping", screen.getCursorScreenPoint()).catch(() => {}) },
     { label: `表情轮盘   ${activeKeys.emote || "未注册"}`, click: () => openAtPoint("emote", screen.getCursorScreenPoint()).catch(() => {}) },
     { label: `设置   ${activeKeys.settings || "托盘菜单"}`, click: () => openSettings().catch(() => {}) },
@@ -605,7 +751,7 @@ function createTray() {
   if (!image || image.isEmpty()) image = nativeImage.createEmpty();
   try {
     tray = new Tray(image);
-    tray.on("double-click", () => openSettings().catch(() => {}));
+    tray.on("double-click", () => openAppSettings());
     updateTray();
   } catch (error) {
     log("tray failed", error.message);
@@ -650,15 +796,27 @@ ipcMain.handle("send-signal", async (event, payload) => {
   return { ok: true, queued: true };
 });
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   const targetArg = process.argv.find((arg) => arg.startsWith("--target="));
-  if (targetArg) {
+  const startHubFlag = process.argv.includes("--start-hub");
+  const settingsFlag = process.argv.includes("--settings");
+  if (targetArg && !startHubFlag && !settingsFlag) {
     const requested = targetArg.slice("--target=".length);
     const result = setTransport(requested === "hub" ? "hub" : "dsh", "cli");
     const transport = readTransport();
     log("target-switch", { requested, ok: result.ok, transport: transport ? transport.kind : "none" });
     app.quit();
     return;
+  }
+  if (startHubFlag) {
+    const result = await startHubFromApp();
+    if (result.ok) setTransport("hub", "cli-hub");
+    log("start-hub", { ok: result.ok, port: result.hub && result.hub.port, error: result.error });
+  }
+  if (targetArg) {
+    const requested = targetArg.slice("--target=".length);
+    const result = setTransport(requested === "hub" ? "hub" : "dsh", "cli");
+    log("target-switch", { requested, ok: result.ok, transport: (readTransport() || {}).kind || "none" });
   }
   if (process.argv.includes("--capture-test")) {
     const display = screen.getPrimaryDisplay();
@@ -698,6 +856,24 @@ app.whenReady().then(() => {
       })
       .catch((error) => log("send-test failed", error && error.message))
       .finally(() => app.quit());
+    return;
+  }
+  const settingsShot = process.argv.find((arg) => arg.startsWith("--settings-shot"));
+  if (settingsShot) {
+    openAppSettings();
+    setTimeout(async () => {
+      try {
+        const image = await settingsWindow.webContents.capturePage();
+        const file = settingsShot.includes("=")
+          ? settingsShot.slice(settingsShot.indexOf("=") + 1)
+          : path.join(app.getPath("userData"), "settings.png");
+        fs.writeFileSync(file, image.toPNG());
+        log("settings-shot", file);
+      } catch (error) {
+        log("settings-shot failed", error && error.message);
+      }
+      app.quit();
+    }, 1600);
     return;
   }
   log("ready", { electron: process.versions.electron, dshHome: process.env.DSH_HOME || "" });
@@ -754,6 +930,9 @@ app.whenReady().then(() => {
       else openAtPoint(mode === "emote" ? "emote" : "ping", point).catch((error) => console.error(error));
     }, 900);
   }
+  if (settingsFlag) {
+    setTimeout(() => openAppSettings(), 500);
+  }
 });
 
 app.on("window-all-closed", () => {
@@ -764,6 +943,12 @@ app.on("will-quit", () => {
   clearInterval(statusTimer);
   clearInterval(flushTimer);
   globalShortcut.unregisterAll();
+  if (embeddedHub) {
+    try {
+      embeddedHub.close();
+    } catch {}
+    embeddedHub = null;
+  }
   for (const win of overlays.values()) {
     try {
       win.destroy();

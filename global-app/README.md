@@ -105,6 +105,30 @@ The DSH plugin receives the signal over SSE and sends it to the active conversat
 - `重试待发送` in the tray flushes the queue immediately.
 - If the DSH page is connected but no conversation is active, the plugin queues the signal until a session binds.
 
+## Settings window and standalone hub
+
+Newer builds ship a real settings window (`settings.html`) next to the wheel:
+
+- **投递目标**: DSH bridge or the standalone hub.
+- **独立 Hub**: start/stop the hub inside the tray app; the address and mode
+  (embedded/external) are shown. Starting it from here also switches delivery.
+- **接入 CLI Agent**: copy-ready attach commands for Codex / Claude Code.
+- **启动与快捷键**: autostart with Windows and the hotkeys that registered.
+
+The tray icon stays alive in the background; double-click it to open the
+settings, or use tray → 应用设置….
+
+Flags:
+
+```powershell
+AgentPingCore.exe --no-sandbox --settings               # open settings
+AgentPingCore.exe --no-sandbox --start-hub              # tray + embedded hub
+AgentPingCore.exe --no-sandbox --settings-shot=<file>   # render settings to PNG
+```
+
+The hub is imported from `hub.mjs` (synced from `standalone/hub.js` by
+`npm run sync`), so the tray app can be the only process the user starts.
+
 ## Configuration and security
 
 - Bridge port is chosen from `127.0.0.1:47654` upward; the active port/token is in `$DSH_HOME\agent-ping-bridge.json`.
@@ -126,13 +150,16 @@ Output: `release\AgentPing-win32-x64\` with `AgentPingCore.exe`, `AgentPing.cmd`
 
 ```text
 global-app/
-  main.js              # tray, global hotkeys, overlay windows, screenshot, bridge client
+  main.js              # tray, global hotkeys, overlay windows, screenshot, transport
+  settings.html/css/js # settings window
+  settings-preload.js  # settings IPC bridge
+  hub.mjs              # synced copy of the standalone hub
   preload.js           # narrow IPC bridge
   renderer/index.html  # transparent overlay host
   renderer/overlay.js  # mock session adapter for the shared wheel
   renderer/agent-ping-client.js  # synced copy of the DSH client bundle
   assets/              # tray + app icons
-  scripts/sync-client.mjs
+  scripts/sync-client.mjs  # syncs client.js and hub.mjs
   scripts/build-shortcut.ps1  # renames Electron core, writes AgentPing.cmd/.lnk
 ```
 

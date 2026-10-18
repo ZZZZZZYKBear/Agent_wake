@@ -107,6 +107,32 @@ agent-ping next --timeout 5
 The app log records the resolved transport (`"transport":"hub"`) and the hub
 receipt.
 
+## Desktop app: tray + settings
+
+The packaged tray app is also the standalone control panel. It lives in the
+background with a tray icon and opens a proper **应用设置** window (double-click
+the tray icon, or tray → 应用设置…):
+
+![settings window](../screenshots/31-settings.png)
+
+- **投递目标**: DSH bridge or the standalone hub.
+- **独立 Hub**: start/stop the hub **inside the tray app** (no extra terminal),
+  copy its address, see whether it is embedded or external.
+- **接入 CLI Agent**: copy-ready `agent-ping attach codex` / `claude` commands.
+- **启动与快捷键**: autostart with Windows, and the hotkeys that actually
+  registered.
+
+Starting the hub from the settings page also switches delivery to it. An
+externally started hub is reused instead of starting a second one.
+
+Scriptable flags:
+
+```powershell
+AgentPingCore.exe --no-sandbox --settings        # open the settings window
+AgentPingCore.exe --no-sandbox --start-hub       # tray app + embedded hub
+AgentPingCore.exe --no-sandbox --settings-shot=<file>  # render the settings page to PNG
+```
+
 ## CLI agents: Codex, Claude Code, anything interactive
 
 `attach` runs a CLI agent inside a real PTY and types claimed signals into its
