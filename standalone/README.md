@@ -107,23 +107,57 @@ agent-ping next --timeout 5
 The app log records the resolved transport (`"transport":"hub"`) and the hub
 receipt.
 
+## CLI agents: Codex, Claude Code, anything interactive
+
+`attach` runs a CLI agent inside a real PTY and types claimed signals into its
+prompt line. Start it instead of the agent:
+
+```powershell
+# starts a hub if none is running, then launches Codex inside a PTY
+agent-ping attach codex
+
+# Claude Code, or any other interactive CLI
+agent-ping attach claude
+agent-ping attach -- my-agent --flag
+```
+
+Point the wheel at the hub (tray → **投递目标 → 独立 Hub**, or
+`AgentPingCore.exe --target=hub`), then fire a signal. It is flattened to one
+line and typed into the agent followed by Enter, exactly as if you had typed it.
+Keystrokes and screen output are forwarded both ways, so the agent still works
+as a normal terminal app; using the agent without Agent Ping is unaffected.
+
+Notes:
+
+- Multi-line prompts are flattened for typing (the agent sees one line); the
+  target selector, text and coordinates are preserved in that line.
+- Whether a signal sent while the agent is busy is queued or ignored is up to
+  the agent (Claude Code queues typed input, for example).
+- `attach` needs `node-pty`; run `npm install` in `standalone/` once. It uses
+  Windows ConPTY, so no separate terminal emulator is required.
+- For scripted agents, `agent-ping next` keeps working: claim a signal and pass
+  it to whatever wants it.
+
 Remaining adapters, in order:
 
 1. ~~Global overlay → hub~~ (done: `global.json` endpoint, screenshot context
    unchanged).
-2. **DSH adapter**: claims from the hub and routes to the chosen conversation.
-3. **Webhook adapter**: documented payload, retries.
-4. **Clipboard/paste driver** for GUI agents that have no API.
+2. ~~Interactive CLI agents~~ (done: `attach` with PTY injection).
+3. **DSH adapter**: claims from the hub and routes to the chosen conversation.
+4. **Webhook adapter**: documented payload, retries.
 
 ## Tests
 
 ```powershell
 cd standalone
-node test.js
+npm install        # node-pty, once
+npm test           # hub tests + attach tests
 ```
 
-Covers auth, queueing, long-poll claim, timeout, SSE fan-out, webhook delivery
-and config lifecycle.
+The hub suite covers auth, queueing, long-poll claim, timeout, SSE fan-out,
+webhook delivery and config lifecycle. The attach suite spawns a mock agent in a
+PTY and checks signal injection, keystroke forwarding and exit-code
+propagation.
 
 ## Relation to the DSH version
 
@@ -131,5 +165,6 @@ and config lifecycle.
 - `standalone` is this rewrite; the DSH-specific code stays in the repo as one
   adapter, but the hub and CLI do not depend on DSH.
 
-Version `0.1.0` — hub, CLI and wheel → hub delivery are working; the DSH adapter
-(claim from hub, route to a conversation) is the next step.
+Version `0.1.0` — hub, CLI, wheel → hub delivery and the interactive CLI wrapper
+(`attach`) work; the DSH adapter (claim from hub, route to a conversation) is the
+next step.

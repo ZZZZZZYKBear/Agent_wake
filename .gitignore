@@ -19,3 +19,6 @@ global-app/release/
 Thumbs.db
 desktop.ini
 .DS_Store
+
+# Standalone dependencies
+standalone/node_modules/

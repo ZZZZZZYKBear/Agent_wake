@@ -16,11 +16,14 @@ Usage:
   agent-ping send <text...> [--label L] [--emoji E] [--source S] [--json]
                                            post a signal to the hub
   agent-ping next [--timeout 30] [--json]  claim the next signal (exit 2 on timeout)
+  agent-ping attach [command...]           run a CLI agent in a PTY and type signals into it
+                                           (default command: codex)
   agent-ping status [--json]               show hub health
   agent-ping version
 
 Signals are JSON objects with at least { prompt, label, emoji, source }.
-Agents can either long-poll "next" or register a webhook with the hub.
+Agents can either long-poll "next", register a webhook with the hub, or be
+wrapped with "attach" so a signal is typed into their prompt line.
 `;
 
 function parse(argv) {
@@ -28,6 +31,10 @@ function parse(argv) {
   const positional = [];
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
+    if (arg === "--") {
+      positional.push(...argv.slice(index + 1));
+      break;
+    }
     if (arg.startsWith("--")) {
       const body = arg.slice(2);
       const eq = body.indexOf("=");
@@ -131,6 +138,20 @@ async function commandNext(options) {
   else console.log(signal.prompt);
 }
 
+async function commandAttach(positional) {
+  const command = positional[0] || "codex";
+  const args = positional.slice(1);
+  let attach;
+  try {
+    ({ attach } = await import("./attach.js"));
+  } catch (error) {
+    console.error("agent-ping: attach needs node-pty. Run `npm install` in standalone/ first.");
+    console.error(error && error.message ? error.message : String(error));
+    process.exit(1);
+  }
+  process.exit(await attach(command, args));
+}
+
 async function commandStatus(options) {
   const config = await requireHub();
   const response = await fetch(hubUrl(config) + "/health");
@@ -155,6 +176,9 @@ async function main() {
       break;
     case "next":
       await commandNext(options);
+      break;
+    case "attach":
+      await commandAttach(positional);
       break;
     case "status":
       await commandStatus(options);
