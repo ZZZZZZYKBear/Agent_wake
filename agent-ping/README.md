@@ -12,6 +12,8 @@ The keys match the global desktop overlay. When DSH has focus, the global app su
 
 The first sector of the ping wheel is **提问**. It closes the wheel and opens a question composer anchored to the marked element. The prompt includes the element selector, a short label, nearby text and the viewport coordinates, so the agent knows what you are pointing at.
 
+While the composer is open, the purple target box is adjustable: drag its body to move the mark, drag a corner handle to resize it. On release the element under the box center is captured again, so the composer's label and the prompt follow the new area.
+
 Everything runs inside the DSH client: the plugin binds to the active conversation through `conversation.input.dock`, then calls the session's `beginSubmission()` / `prompt()` methods. The in-page wheel needs no external server.
 
 Version 0.2.0 also starts a **loopback bridge** in the plugin's host half. It lets the separate Agent Ping Global desktop overlay send signals into DSH while DSH is minimized or in the background. The bridge binds to `127.0.0.1` only and writes its port/token to `$DSH_HOME/agent-ping-bridge.json`.

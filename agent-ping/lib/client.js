@@ -563,6 +563,32 @@ window.__ModuleLoader__.load({
 	transform: scale(1.02);
 }
 .ap-target.is-visible { opacity: 1; transform: scale(1); }
+.ap-target .ap-resize {
+	position: absolute;
+	z-index: 2;
+	width: 13px;
+	height: 13px;
+	border: 2px solid var(--ap-color, #c8aa6e);
+	border-radius: 3px;
+	background: rgba(3, 10, 16, .92);
+	box-shadow: 0 0 6px color-mix(in srgb, var(--ap-color, #c8aa6e) 55%, transparent);
+	pointer-events: none;
+	opacity: 0;
+	transition: opacity .15s ease;
+}
+.ap-resize.tl { left: -7px; top: -7px; cursor: nwse-resize; }
+.ap-resize.tr { right: -7px; top: -7px; cursor: nesw-resize; }
+.ap-resize.bl { left: -7px; bottom: -7px; cursor: nesw-resize; }
+.ap-resize.br { right: -7px; bottom: -7px; cursor: nwse-resize; }
+.ap-root.is-ask .ap-target.is-visible {
+	pointer-events: auto;
+	touch-action: none;
+	cursor: grab;
+}
+.ap-root.is-ask .ap-target.is-visible .ap-resize { pointer-events: auto; opacity: 1; }
+.ap-root.is-ask .ap-target.is-visible .ap-corner { opacity: 0; }
+.ap-target.is-adjusting { cursor: grabbing; }
+.ap-target.is-adjusting .ap-resize { cursor: grabbing; }
 .ap-target .ap-corner {
 	position: absolute;
 	width: 12px;
@@ -1381,6 +1407,7 @@ window.__ModuleLoader__.load({
 				this.lastPointer = { x: innerWidth / 2, y: innerHeight / 2 };
 				this.wheel = null;
 				this.askState = null;
+				this.targetDrag = null;
 				this.settingsOpen = false;
 				this.pending = null;
 				this.toastTimer = null;
@@ -1402,7 +1429,10 @@ window.__ModuleLoader__.load({
 					blur: () => this.onBlur(),
 					focus: () => this.onWindowFocus(),
 					windowBlur: () => this.onWindowBlur(),
-					visibility: () => this.onVisibility()
+					visibility: () => this.onVisibility(),
+					targetDown: (event) => this.onTargetPointerDown(event),
+					targetMove: (event) => this.onTargetPointerMove(event),
+					targetUp: (event) => this.onTargetPointerUp(event)
 				};
 			}
 
@@ -1416,6 +1446,8 @@ window.__ModuleLoader__.load({
 <div class="ap-scrim" data-ap-scrim></div>
 <div class="ap-target" data-ap-target>
 	<span class="ap-corner tl"></span><span class="ap-corner tr"></span><span class="ap-corner bl"></span><span class="ap-corner br"></span>
+	<span class="ap-resize tl" data-ap-resize="tl"></span><span class="ap-resize tr" data-ap-resize="tr"></span>
+	<span class="ap-resize bl" data-ap-resize="bl"></span><span class="ap-resize br" data-ap-resize="br"></span>
 	<span class="ap-target-tag" data-ap-target-tag></span>
 </div>
 <div class="ap-wheel" data-ap-wheel>
@@ -1477,6 +1509,9 @@ window.__ModuleLoader__.load({
 				document.addEventListener("visibilitychange", this.bound.visibility);
 				window.addEventListener("focus", this.bound.focus);
 				window.addEventListener("blur", this.bound.windowBlur);
+				this.el.target.addEventListener("pointerdown", this.bound.targetDown);
+				window.addEventListener("pointermove", this.bound.targetMove, true);
+				window.addEventListener("pointerup", this.bound.targetUp, true);
 				this.renderFeed();
 				this.updateFeedVisibility();
 			}
@@ -1489,6 +1524,8 @@ window.__ModuleLoader__.load({
 				this.focusTimer = null;
 				window.removeEventListener("focus", this.bound.focus);
 				window.removeEventListener("blur", this.bound.windowBlur);
+				window.removeEventListener("pointermove", this.bound.targetMove, true);
+				window.removeEventListener("pointerup", this.bound.targetUp, true);
 				if (this.pointerRaf != null) cancelAnimationFrame(this.pointerRaf);
 				this.pointerRaf = null;
 				this.pointerPending = null;
@@ -2127,6 +2164,114 @@ window.__ModuleLoader__.load({
 
 			hideTarget() {
 				this.el.target.classList.remove("is-visible");
+				this.el.target.classList.remove("is-adjusting");
+				this.targetDrag = null;
+			}
+
+			onTargetPointerDown(event) {
+				if (!this.askState || this.globalMode) return;
+				if (event.button !== 0) return;
+				const box = this.el.target;
+				if (!box || !box.classList.contains("is-visible")) return;
+				const handle = event.target && event.target.closest ? event.target.closest("[data-ap-resize]") : null;
+				const rect = box.getBoundingClientRect();
+				if (!rect.width || !rect.height) return;
+				this.targetDrag = {
+					mode: handle ? "resize" : "move",
+					corner: handle ? handle.getAttribute("data-ap-resize") || "" : "",
+					startX: event.clientX,
+					startY: event.clientY,
+					box: { left: rect.left, top: rect.top, width: rect.width, height: rect.height }
+				};
+				box.classList.add("is-adjusting");
+				try { box.setPointerCapture(event.pointerId); } catch {}
+				event.preventDefault();
+				event.stopPropagation();
+			}
+
+			onTargetPointerMove(event) {
+				const drag = this.targetDrag;
+				if (!drag) return;
+				const dx = event.clientX - drag.startX;
+				const dy = event.clientY - drag.startY;
+				let { left, top, width, height } = drag.box;
+				const minWidth = 46;
+				const minHeight = 34;
+				if (drag.mode === "move") {
+					left += dx;
+					top += dy;
+				} else {
+					if (drag.corner.includes("l")) { left += dx; width -= dx; }
+					if (drag.corner.includes("r")) { width += dx; }
+					if (drag.corner.includes("t")) { top += dy; height -= dy; }
+					if (drag.corner.includes("b")) { height += dy; }
+					if (width < minWidth) {
+						if (drag.corner.includes("l")) left -= minWidth - width;
+						width = minWidth;
+					}
+					if (height < minHeight) {
+						if (drag.corner.includes("t")) top -= minHeight - height;
+						height = minHeight;
+					}
+				}
+				const maxWidth = Math.max(minWidth, Math.floor(innerWidth * 0.94));
+				const maxHeight = Math.max(minHeight, Math.floor(innerHeight * 0.86));
+				width = Math.min(width, maxWidth);
+				height = Math.min(height, maxHeight);
+				left = Math.max(0, Math.min(innerWidth - width, left));
+				top = Math.max(0, Math.min(innerHeight - height, top));
+				this.el.target.style.left = Math.round(left) + "px";
+				this.el.target.style.top = Math.round(top) + "px";
+				this.el.target.style.width = Math.round(width) + "px";
+				this.el.target.style.height = Math.round(height) + "px";
+				event.preventDefault();
+			}
+
+			onTargetPointerUp(event) {
+				if (!this.targetDrag) return;
+				this.targetDrag = null;
+				const box = this.el.target;
+				if (!box) return;
+				box.classList.remove("is-adjusting");
+				try { box.releasePointerCapture(event.pointerId); } catch {}
+				if (!this.askState) return;
+				const rect = box.getBoundingClientRect();
+				if (rect.width < 20 || rect.height < 16) return;
+				const area = {
+					left: rect.left + 5,
+					top: rect.top + 5,
+					width: Math.max(12, rect.width - 10),
+					height: Math.max(12, rect.height - 10)
+				};
+				const x = Math.round(area.left + area.width / 2);
+				const y = Math.round(area.top + area.height / 2);
+				const captured = captureTarget(x, y) || {};
+				const meaningful = captured.selector && captured.selector !== "页面空白处";
+				const target = {
+					...captured,
+					x,
+					y,
+					selector: meaningful ? captured.selector : "手动框选区域",
+					label: meaningful ? captured.label : "手动框选的区域",
+					text: meaningful ? captured.text || "" : "",
+					rect: area
+				};
+				this.askState.target = target;
+				this.showTarget(target, this.askState.item && this.askState.item.color);
+				this.refreshAskTarget(target);
+			}
+
+			refreshAskTarget(target) {
+				if (!this.el.ask || !target) return;
+				const label = this.el.ask.querySelector(".ap-ask-target-label");
+				const text = this.el.ask.querySelector(".ap-ask-target-text");
+				const contextLine = target.selector && target.selector !== "页面空白处"
+					? target.selector
+					: target.text
+						? oneLine(target.text, 90)
+						: "页面空白处";
+				if (label) label.textContent = target.label || "页面空白处";
+				if (text) text.textContent = contextLine;
 			}
 
 			closeWheel(silent) {
@@ -2268,7 +2413,7 @@ window.__ModuleLoader__.load({
 		<button class="ap-chip" type="button" data-ap-chip="继续从这里工作">继续从这里工作</button>
 	</div>
 	<div class="ap-ask-foot">
-		<span class="ap-ask-hint">Ctrl + Enter 发送 · Esc 取消</span>
+		<span class="ap-ask-hint">拖动紫框或四角可调整标记 · Ctrl + Enter 发送 · Esc 取消</span>
 		<button class="ap-send" type="button" data-ap-ask-send>
 			<span data-ap-ask-send-label>发送信号</span>
 			<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m4 12 15-7-4.6 15-3.5-6.1L4 12Z"/></svg>
