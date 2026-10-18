@@ -64,37 +64,78 @@ if (!gotLock) {
   });
 }
 
-function bridgeFile() {
-  const home = process.env.DSH_HOME || path.join(os.homedir(), ".dsh");
-  return path.join(home, "agent-ping-bridge.json");
+function agentPingHome() {
+  return process.env.AGENT_PING_HOME || path.join(os.homedir(), ".agent-ping");
 }
 
-function readBridge() {
+function readJsonFile(file) {
   try {
-    const value = JSON.parse(fs.readFileSync(bridgeFile(), "utf8"));
-    if (!value || !value.port || !value.token) return null;
-    return value;
+    const text = fs.readFileSync(file, "utf8").replace(/^\uFEFF/, "");
+    const value = JSON.parse(text);
+    return value && typeof value === "object" ? value : null;
   } catch {
     return null;
   }
 }
 
-function loopback(method, pathname, body, timeoutMs = 2400) {
+function readBridge() {
+  const home = process.env.DSH_HOME || path.join(os.homedir(), ".dsh");
+  const value = readJsonFile(path.join(home, "agent-ping-bridge.json"));
+  if (!value || !value.port || !value.token) return null;
+  return value;
+}
+
+function readHub() {
+  const value = readJsonFile(path.join(agentPingHome(), "hub.json"));
+  if (!value || !value.port || !value.token) return null;
+  return value;
+}
+
+/**
+ * Resolve where signals go. `~/.agent-ping/global.json` with an `endpoint`
+ * opts into the standalone hub; without it the DSH loopback bridge is used.
+ */
+function readTransport() {
+  const globalConfig = readJsonFile(path.join(agentPingHome(), "global.json")) || {};
+  const endpoint = typeof globalConfig.endpoint === "string"
+    ? globalConfig.endpoint.trim().replace(/\/+$/, "")
+    : "";
+  if (endpoint) {
+    let token = typeof globalConfig.token === "string" ? globalConfig.token : "";
+    const hub = readHub();
+    if (!token && hub) {
+      const hubUrl = "http://" + (hub.host || "127.0.0.1") + ":" + hub.port;
+      if (endpoint === hubUrl) token = hub.token;
+    }
+    if (token) return { kind: "hub", base: endpoint, token };
+  }
+  const bridge = readBridge();
+  if (bridge) return { kind: "dsh", base: "http://127.0.0.1:" + bridge.port, token: bridge.token };
+  return null;
+}
+
+function request(target, method, pathname, body, timeoutMs = 2400) {
   return new Promise((resolve) => {
-    const config = readBridge();
-    if (!config) {
-      resolve({ ok: false, error: "bridge-offline" });
+    let url;
+    try {
+      url = new URL(target.base);
+    } catch {
+      resolve({ ok: false, error: "bad-endpoint" });
+      return;
+    }
+    if (url.protocol !== "http:") {
+      resolve({ ok: false, error: "unsupported-protocol" });
       return;
     }
     const data = body ? JSON.stringify(body) : null;
-    const request = http.request(
+    const req = http.request(
       {
-        host: "127.0.0.1",
-        port: config.port,
+        host: url.hostname,
+        port: Number(url.port) || 80,
         path: pathname,
         method,
         headers: {
-          "x-agent-ping-token": config.token,
+          "x-agent-ping-token": target.token,
           ...(data
             ? {
                 "content-type": "application/json; charset=utf-8",
@@ -115,29 +156,48 @@ function loopback(method, pathname, body, timeoutMs = 2400) {
         });
       }
     );
-    request.on("error", (error) => resolve({ ok: false, error: error.code || error.message }));
-    request.setTimeout(timeoutMs, () => request.destroy(new Error("timeout")));
-    if (data) request.write(data);
-    request.end();
+    req.on("error", (error) => resolve({ ok: false, error: error.code || error.message }));
+    req.setTimeout(timeoutMs, () => req.destroy(new Error("timeout")));
+    if (data) req.write(data);
+    req.end();
   });
 }
 
 async function postSignal(payload) {
-  let result = await loopback("POST", "/signal", payload);
+  const target = readTransport();
+  if (!target) return { ok: false, error: "no-transport" };
+  let body = payload;
+  if (target.kind === "hub" && payload && payload.target && payload.target.preview) {
+    // The hub is agent-agnostic: the screenshot path in target.text is enough,
+    // the inline data URL would only bloat the signal for CLI consumers.
+    body = { ...payload, target: { ...payload.target, preview: "" } };
+  }
+  let result = await request(target, "POST", "/signal", body);
   if (!result.ok && result.status === 401) {
     await new Promise((resolve) => setTimeout(resolve, 160));
-    result = await loopback("POST", "/signal", payload);
+    result = await request(target, "POST", "/signal", body);
   }
   return result;
 }
 
 async function checkHealth() {
-  const result = await loopback("GET", "/health");
-  if (result.ok && result.data && result.data.service === "dsh-agent-ping") {
-    health = { kind: result.data.clients > 0 ? "connected" : "waiting", clients: result.data.clients || 0 };
+  const target = readTransport();
+  if (!target) {
+    health = { kind: "offline", clients: 0, transport: "none" };
+    setDshFocused(false);
+    updateTray();
+    return health;
+  }
+  const result = await request(target, "GET", "/health");
+  if (target.kind === "hub") {
+    const ok = result.ok && result.data && result.data.service === "agent-ping-hub";
+    health = { kind: ok ? "connected" : "offline", clients: ok ? result.data.waiters || 0 : 0, transport: "hub" };
+    setDshFocused(false);
+  } else if (result.ok && result.data && result.data.service === "dsh-agent-ping") {
+    health = { kind: result.data.clients > 0 ? "connected" : "waiting", clients: result.data.clients || 0, transport: "dsh" };
     setDshFocused(Boolean(result.data.dshFocused));
   } else {
-    health = { kind: "offline", clients: 0 };
+    health = { kind: "offline", clients: 0, transport: "dsh" };
     setDshFocused(false);
   }
   updateTray();
@@ -179,8 +239,8 @@ function enqueue(payload) {
 
 async function flushOutbox() {
   if (outbox.length === 0) return;
-  const config = readBridge();
-  if (!config) {
+  const target = readTransport();
+  if (!target) {
     updateTray();
     return;
   }
@@ -424,19 +484,21 @@ function registerHotkeys(silent = false) {
 
 function updateTray() {
   if (!tray) return;
+  const transportLabel = health.transport === "hub" ? "Agent Ping Hub" : "DSH";
   const statusText =
     health.kind === "connected"
-      ? "已连接 DSH"
+      ? `已连接 ${transportLabel}`
       : health.kind === "waiting"
         ? "DSH 已启动，等待页面连接"
         : health.kind === "offline"
-          ? "DSH 未连接"
-          : "正在检测 DSH…";
+          ? `${transportLabel} 未连接`
+          : "正在检测…";
   const queueText = outbox.length > 0 ? ` · ${outbox.length} 条待发送` : "";
   tray.setToolTip(`Agent Ping · ${statusText}${queueText}`);
   const menu = Menu.buildFromTemplate([
     { label: "Agent Ping Global", enabled: false },
     { label: `${statusText}${queueText}`, enabled: false },
+    { label: `信号目标：${health.transport === "hub" ? "独立 Hub" : "DSH 桥接"}`, enabled: false },
     ...(hotkeysSuppressed ? [{ label: "DSH 聚焦：快捷键由页面内轮盘处理", enabled: false }] : []),
     { type: "separator" },
     { label: `信号轮盘   ${activeKeys.ping || "未注册"}`, click: () => openAtPoint("ping", screen.getCursorScreenPoint()).catch(() => {}) },
@@ -526,7 +588,34 @@ app.whenReady().then(() => {
       .finally(() => app.quit());
     return;
   }
+  if (process.argv.includes("--send-test")) {
+    const display = screen.getPrimaryDisplay();
+    const point = screen.getCursorScreenPoint();
+    buildTarget(display, point)
+      .then(async (target) => {
+        const transport = readTransport();
+        const result = await postSignal({
+          prompt: "【Agent Ping · 传输测试】这是一条从独立模式发出的测试信号，收到即可。",
+          label: "传输测试",
+          emoji: "🧪",
+          source: "global",
+          target
+        });
+        log("send-test", {
+          transport: transport ? transport.kind : "none",
+          base: transport ? transport.base : "",
+          ok: result.ok,
+          status: result.status,
+          delivered: result.data && result.data.delivered
+        });
+      })
+      .catch((error) => log("send-test failed", error && error.message))
+      .finally(() => app.quit());
+    return;
+  }
   log("ready", { electron: process.versions.electron, dshHome: process.env.DSH_HOME || "" });
+  const startupTransport = readTransport();
+  log("transport", startupTransport ? { kind: startupTransport.kind, base: startupTransport.base } : "none");
   createTray();
   registerHotkeys();
   checkHealth().catch(() => {});

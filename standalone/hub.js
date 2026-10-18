@@ -30,7 +30,8 @@ export function configFile() {
 
 export function readHubConfig() {
   try {
-    return JSON.parse(fs.readFileSync(configFile(), "utf8"));
+    const text = fs.readFileSync(configFile(), "utf8").replace(/^\uFEFF/, "");
+    return JSON.parse(text);
   } catch {
     return null;
   }

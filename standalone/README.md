@@ -72,15 +72,36 @@ token lives in `~/.agent-ping/hub.json` (override the directory with
 
 ## Wiring the wheel to the hub
 
-This is the next step on this branch: the overlay currently posts to the DSH
-bridge. The standalone target is a configurable endpoint in the global app
-(default `http://127.0.0.1:47660`), so the same wheel can feed any hub — local or
-remote — and the DSH plugin becomes a thin adapter that claims from the hub and
-calls `session.prompt()`.
+Create `~/.agent-ping/global.json`:
 
-Planned adapters, in order:
+```json
+{ "endpoint": "http://127.0.0.1:47660" }
+```
 
-1. **Global overlay → hub** (endpoint setting, screenshot context unchanged).
+The global overlay then posts every signal to that endpoint instead of the DSH
+bridge. When the endpoint matches the running hub (`~/.agent-ping/hub.json`),
+its token is picked up automatically; a remote endpoint needs an explicit
+`"token"` in the same file. Delete `global.json` to switch back to DSH.
+
+Because the hub is agent-agnostic, the inline screenshot data URL is dropped for
+hub sends (the `target.text` still carries the saved screenshot path); a test
+signal is about 600 bytes instead of ~150 KB.
+
+To verify the whole path without opening the wheel:
+
+```powershell
+AgentPingCore.exe --no-sandbox --send-test
+# then, in another terminal:
+agent-ping next --timeout 5
+```
+
+The app log records the resolved transport (`"transport":"hub"`) and the hub
+receipt.
+
+Remaining adapters, in order:
+
+1. ~~Global overlay → hub~~ (done: `global.json` endpoint, screenshot context
+   unchanged).
 2. **DSH adapter**: claims from the hub and routes to the chosen conversation.
 3. **Webhook adapter**: documented payload, retries.
 4. **Clipboard/paste driver** for GUI agents that have no API.
@@ -101,4 +122,5 @@ and config lifecycle.
 - `standalone` is this rewrite; the DSH-specific code stays in the repo as one
   adapter, but the hub and CLI do not depend on DSH.
 
-Version `0.1.0` — hub and CLI only; the wheel integration is in progress.
+Version `0.1.0` — hub, CLI and wheel → hub delivery are working; the DSH adapter
+(claim from hub, route to a conversation) is the next step.
