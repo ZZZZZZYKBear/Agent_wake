@@ -1,3 +1,5 @@
+> **分支说明**：`main` 是归档的 DSH 版（0.2.x）；`standalone` 分支把 Agent Ping 做成与 agent 无关的独立工具，先落地本地信号总线（hub + CLI），见 [standalone/README.md](standalone/README.md)。
+
 # Agent Ping — 英雄联盟式 Agent 信号轮盘
 
 在 DSH 里按 `Shift + Alt + Q` 打开信号轮盘，移动鼠标并点击扇区；问号会对准标记元素弹出提问框，`Shift + Alt + E` 的表情轮盘可以把「继续工作」「跑测试」直接发给 agent。
