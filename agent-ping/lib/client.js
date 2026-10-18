@@ -551,6 +551,27 @@ window.__ModuleLoader__.load({
 .ap-root.is-wheel { cursor: none; }
 .ap-root.is-wheel * { cursor: none !important; }
 
+/* ---- spotlight: keep the marked area crisp, frost everything around it ---- */
+.ap-root .ap-spot {
+	position: absolute;
+	inset: 0;
+	display: none;
+	pointer-events: none;
+}
+.ap-root.is-spot .ap-spot { display: block; }
+.ap-root.is-spot .ap-scrim {
+	background: transparent;
+	backdrop-filter: none;
+	-webkit-backdrop-filter: none;
+}
+.ap-spot-panel {
+	position: absolute;
+	background: rgba(1, 6, 10, .5);
+	backdrop-filter: blur(6px) saturate(.82);
+	-webkit-backdrop-filter: blur(6px) saturate(.82);
+}
+.ap-root.ap-global .ap-spot { display: none !important; }
+
 /* ---- target ring ---- */
 .ap-target {
 	position: fixed;
@@ -1444,6 +1465,12 @@ window.__ModuleLoader__.load({
 				root.className = this.globalMode ? "ap-root ap-global" : "ap-root";
 				root.innerHTML = `
 <div class="ap-scrim" data-ap-scrim></div>
+<div class="ap-spot" data-ap-spot>
+	<div class="ap-spot-panel" data-ap-spot-panel="top"></div>
+	<div class="ap-spot-panel" data-ap-spot-panel="bottom"></div>
+	<div class="ap-spot-panel" data-ap-spot-panel="left"></div>
+	<div class="ap-spot-panel" data-ap-spot-panel="right"></div>
+</div>
 <div class="ap-target" data-ap-target>
 	<span class="ap-corner tl"></span><span class="ap-corner tr"></span><span class="ap-corner bl"></span><span class="ap-corner br"></span>
 	<span class="ap-resize tl" data-ap-resize="tl"></span><span class="ap-resize tr" data-ap-resize="tr"></span>
@@ -1479,6 +1506,7 @@ window.__ModuleLoader__.load({
 				this.root = root;
 				this.el = {
 					scrim: root.querySelector("[data-ap-scrim]"),
+					spot: root.querySelector("[data-ap-spot]"),
 					target: root.querySelector("[data-ap-target]"),
 					targetTag: root.querySelector("[data-ap-target-tag]"),
 					wheel: root.querySelector("[data-ap-wheel]"),
@@ -2095,6 +2123,7 @@ window.__ModuleLoader__.load({
 			onResize() {
 				if (this.wheel) this.closeWheel();
 				if (this.askState) this.positionAsk();
+				this.updateSpotlight();
 			}
 
 			onBlur() {
@@ -2160,12 +2189,42 @@ window.__ModuleLoader__.load({
 				this.el.target.style.setProperty("--ap-color", color || (this.wheel && this.wheel.items[0] ? this.wheel.items[0].color : "#c8aa6e"));
 				this.el.targetTag.textContent = target.label || target.selector || "标记位置";
 				this.el.target.classList.add("is-visible");
+				this.updateSpotlight();
 			}
 
 			hideTarget() {
 				this.el.target.classList.remove("is-visible");
 				this.el.target.classList.remove("is-adjusting");
 				this.targetDrag = null;
+				this.updateSpotlight();
+			}
+
+			updateSpotlight() {
+				if (!this.root || !this.el || !this.el.spot) return;
+				const box = this.el.target;
+				const live = Boolean(this.askState) && !this.globalMode && box && box.classList.contains("is-visible");
+				this.root.classList.toggle("is-spot", Boolean(live));
+				if (!live) return;
+				const rect = box.getBoundingClientRect();
+				const pad = 2;
+				const left = Math.max(0, rect.left - pad);
+				const top = Math.max(0, rect.top - pad);
+				const right = Math.min(innerWidth, rect.right + pad);
+				const bottom = Math.min(innerHeight, rect.bottom + pad);
+				const areas = {
+					top: [0, 0, innerWidth, top],
+					bottom: [0, bottom, innerWidth, innerHeight - bottom],
+					left: [0, top, left, bottom - top],
+					right: [right, top, innerWidth - right, bottom - top]
+				};
+				for (const [name, [x, y, width, height]] of Object.entries(areas)) {
+					const panel = this.el.spot.querySelector(`[data-ap-spot-panel="${name}"]`);
+					if (!panel) continue;
+					panel.style.left = Math.round(x) + "px";
+					panel.style.top = Math.round(y) + "px";
+					panel.style.width = Math.max(0, Math.round(width)) + "px";
+					panel.style.height = Math.max(0, Math.round(height)) + "px";
+				}
 			}
 
 			onTargetPointerDown(event) {
@@ -2224,6 +2283,7 @@ window.__ModuleLoader__.load({
 				this.el.target.style.top = Math.round(top) + "px";
 				this.el.target.style.width = Math.round(width) + "px";
 				this.el.target.style.height = Math.round(height) + "px";
+				this.updateSpotlight();
 				event.preventDefault();
 			}
 
@@ -2527,6 +2587,7 @@ window.__ModuleLoader__.load({
 					this.hideTarget();
 					this.setRootState(null);
 				}
+				this.updateSpotlight();
 			}
 
 			openSettings() {

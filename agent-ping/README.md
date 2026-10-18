@@ -12,7 +12,7 @@ The keys match the global desktop overlay. When DSH has focus, the global app su
 
 The first sector of the ping wheel is **提问**. It closes the wheel and opens a question composer anchored to the marked element. The prompt includes the element selector, a short label, nearby text and the viewport coordinates, so the agent knows what you are pointing at.
 
-While the composer is open, the purple target box is adjustable: drag its body to move the mark, drag a corner handle to resize it. On release the element under the box center is captured again, so the composer's label and the prompt follow the new area.
+While the composer is open, the purple target box is adjustable: drag its body to move the mark, drag a corner handle to resize it. On release the element under the box center is captured again, so the composer's label and the prompt follow the new area. The marked area stays crisp while everything around it is dimmed and frosted, so the context you are asking about is never blurred.
 
 Everything runs inside the DSH client: the plugin binds to the active conversation through `conversation.input.dock`, then calls the session's `beginSubmission()` / `prompt()` methods. The in-page wheel needs no external server.
 
