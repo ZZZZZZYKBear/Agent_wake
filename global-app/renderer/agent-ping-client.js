@@ -572,6 +572,59 @@ window.__ModuleLoader__.load({
 }
 .ap-root.ap-global .ap-spot { display: none !important; }
 
+/* ---- session picker ---- */
+.ap-picker {
+	position: fixed;
+	inset: 0;
+	z-index: 5;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	opacity: 0;
+	pointer-events: none;
+	transition: opacity .15s ease;
+}
+.ap-root.is-picker .ap-picker { opacity: 1; pointer-events: auto; }
+.ap-picker-card {
+	width: min(420px, calc(100vw - 32px));
+	max-height: min(74vh, 560px);
+	display: flex;
+	flex-direction: column;
+}
+.ap-picker-list {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	padding: 8px;
+	overflow: auto;
+}
+.ap-picker-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 10px;
+	padding: 9px 11px;
+	border: 1px solid transparent;
+	border-radius: 8px;
+	text-align: left;
+	color: var(--ap-ink);
+}
+.ap-picker-row:hover { background: rgba(200, 170, 110, .08); border-color: rgba(200, 170, 110, .3); }
+.ap-picker-row.is-current { border-color: rgba(10, 200, 185, .4); background: rgba(10, 200, 185, .06); }
+.ap-picker-title {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-size: 13px;
+}
+.ap-picker-meta {
+	flex: 0 0 auto;
+	font-size: 10px;
+	color: rgba(240, 230, 210, .45);
+	letter-spacing: .04em;
+}
+
 /* ---- target ring ---- */
 .ap-target {
 	position: fixed;
@@ -1022,6 +1075,15 @@ window.__ModuleLoader__.load({
 	white-space: nowrap;
 }
 .ap-chip:hover { color: var(--ap-gold-bright); border-color: rgba(200, 170, 110, .5); background: rgba(200, 170, 110, .08); }
+.ap-ask-session {
+	padding: 0 16px 6px;
+	font-size: 10px;
+	letter-spacing: .03em;
+	color: rgba(240, 230, 210, .45);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
 .ap-ask-foot {
 	display: flex;
 	align-items: center;
@@ -1428,6 +1490,7 @@ window.__ModuleLoader__.load({
 				this.lastPointer = { x: innerWidth / 2, y: innerHeight / 2 };
 				this.wheel = null;
 				this.askState = null;
+				this.pickerState = null;
 				this.targetDrag = null;
 				this.settingsOpen = false;
 				this.pending = null;
@@ -1497,6 +1560,7 @@ window.__ModuleLoader__.load({
 </div>
 <div class="ap-cursor" data-ap-cursor></div>
 <div class="ap-ask" data-ap-ask role="dialog" aria-modal="true" aria-label="对标记位置提问"></div>
+<div class="ap-picker" data-ap-picker role="dialog" aria-modal="true" aria-label="选择会话"></div>
 <div class="ap-settings" data-ap-settings role="dialog" aria-modal="true" aria-label="信号轮盘设置"></div>
 <div class="ap-feed" data-ap-feed></div>
 <div class="ap-toast" data-ap-toast role="status" aria-live="polite"></div>
@@ -1521,6 +1585,7 @@ window.__ModuleLoader__.load({
 					hint: root.querySelector("[data-ap-hint]"),
 					cursor: root.querySelector("[data-ap-cursor]"),
 					ask: root.querySelector("[data-ap-ask]"),
+					picker: root.querySelector("[data-ap-picker]"),
 					settings: root.querySelector("[data-ap-settings]"),
 					feed: root.querySelector("[data-ap-feed]"),
 					toast: root.querySelector("[data-ap-toast]"),
@@ -1703,6 +1768,7 @@ window.__ModuleLoader__.load({
 				this.root.classList.toggle("is-active", Boolean(kind));
 				this.root.classList.toggle("is-wheel", kind === "wheel");
 				this.root.classList.toggle("is-ask", kind === "ask");
+				this.root.classList.toggle("is-picker", kind === "picker");
 				this.root.classList.toggle("is-settings", kind === "settings");
 			}
 
@@ -1962,7 +2028,8 @@ window.__ModuleLoader__.load({
 				const target = event.target;
 				if (!this.wheel) {
 					if (target && target.closest && target.closest("[data-ap-scrim]")) {
-						if (this.askState) this.closeAsk();
+						if (this.pickerState) this.closePicker();
+						else if (this.askState) this.closeAsk();
 						else if (this.settingsOpen) this.closeSettings();
 					}
 					return;
@@ -1990,6 +2057,12 @@ window.__ModuleLoader__.load({
 
 			onKeyDown(event) {
 				if (event.key === "Escape") {
+					if (this.pickerState) {
+						event.preventDefault();
+						event.stopPropagation();
+						this.closePicker();
+						return;
+					}
 					if (this.settingsOpen) {
 						event.preventDefault();
 						event.stopPropagation();
@@ -2362,8 +2435,8 @@ window.__ModuleLoader__.load({
 					return;
 				}
 				if (mode === "ping" && item.ask) {
-					this.openAsk(target, item);
 					this.playSound("question");
+					this.chooseSession((sessionId) => this.openAsk(target, item, sessionId));
 					return;
 				}
 				const prompt =
@@ -2371,11 +2444,104 @@ window.__ModuleLoader__.load({
 						? formatEmotePrompt(item.emote, target, this.settings.includeContext)
 						: formatSignalPrompt(item, target, this.settings.includeContext);
 				this.playSound("send");
-				this.ripple(target, item);
-				this.sendPrompt(prompt, item, target);
+				this.chooseSession((sessionId) => {
+					this.ripple(target, item);
+					this.sendPrompt(prompt, item, target, sessionId);
+				});
 			}
 
-			async sendPrompt(prompt, item, target) {
+			sessionOptions() {
+				const state = this.sessionListState();
+				const rows = [];
+				if (state && Array.isArray(state.ids)) {
+					for (const id of state.ids) {
+						const row = state.byId && state.byId[id];
+						if (!row) continue;
+						if (row.parentId || row.origin === "subagent") continue;
+						rows.push({
+							id,
+							title: row.displayTitle || id,
+							running: Boolean(row.running),
+							current: id === this.sessionId,
+							updatedAt: Number(row.updatedAt) || 0
+						});
+					}
+				}
+				if (this.sessionId && !rows.some((row) => row.current)) {
+					rows.unshift({
+						id: this.sessionId,
+						title: "当前会话",
+						running: false,
+						current: true,
+						updatedAt: Date.now()
+					});
+				}
+				return rows.sort((a, b) => Number(b.current) - Number(a.current) || b.updatedAt - a.updatedAt);
+			}
+
+			sessionListState() {
+				try {
+					const list = this.ctx && this.ctx.sessions && this.ctx.sessions.list;
+					if (list && typeof list.getSnapshot === "function") return list.getSnapshot();
+				} catch {}
+				return null;
+			}
+
+			chooseSession(onPick) {
+				const options = this.globalMode ? [] : this.sessionOptions();
+				if (options.length <= 1) {
+					onPick(this.sessionId);
+					return;
+				}
+				this.openSessionPicker(options, onPick);
+			}
+
+			openSessionPicker(options, onPick) {
+				this.hideToast();
+				this.pickerState = { onPick };
+				this.el.picker.innerHTML = `
+<div class="ap-card ap-picker-card">
+	<div class="ap-card-head">
+		<div>
+			<div class="ap-kicker">AGENT PING // TARGET</div>
+			<div class="ap-card-title">发送到哪个会话</div>
+		</div>
+		<button class="ap-icon-btn" type="button" data-ap-picker-close aria-label="关闭">×</button>
+	</div>
+	<div class="ap-picker-list">
+		${options.map((row) => `<button class="ap-picker-row${row.current ? " is-current" : ""}" type="button" data-ap-picker-id="${esc(row.id)}">
+			<span class="ap-picker-title">${esc(row.title)}</span>
+			<span class="ap-picker-meta">${row.current ? "当前" : row.running ? "运行中" : "空闲"}</span>
+		</button>`).join("")}
+	</div>
+	<div class="ap-ask-foot">
+		<span class="ap-ask-hint">Esc 取消 · 选中后立即发送</span>
+	</div>
+</div>`;
+				this.setRootState("picker");
+				this.el.picker.querySelectorAll("[data-ap-picker-id]").forEach((row) => {
+					row.addEventListener("click", () => {
+						const id = row.getAttribute("data-ap-picker-id");
+						const pick = this.pickerState && this.pickerState.onPick;
+						this.closePicker();
+						if (pick) pick(id);
+					});
+				});
+				const close = this.el.picker.querySelector("[data-ap-picker-close]");
+				if (close) close.addEventListener("click", () => this.closePicker());
+				const first = this.el.picker.querySelector(".ap-picker-row");
+				if (first) setTimeout(() => { try { first.focus({ preventScroll: true }); } catch {} }, 20);
+			}
+
+			closePicker() {
+				const state = this.pickerState;
+				this.pickerState = null;
+				if (this.el.picker) this.el.picker.innerHTML = "";
+				if (!this.wheel && !this.askState && !this.settingsOpen) this.setRootState(null);
+				return state;
+			}
+
+			async sendPrompt(prompt, item, target, sessionId) {
 				const meta = {
 					kind: item.emoji ? "emote" : item.id,
 					label: item.label,
@@ -2387,16 +2553,39 @@ window.__ModuleLoader__.load({
 						? { selector: target.selector, label: target.label, x: target.x, y: target.y }
 						: null
 				};
-				if (!this.sessionId) {
+				const targetId = sessionId || this.sessionId;
+				if (!targetId) {
 					this.addRecent({ ...meta, sent: false });
 					this.toast("已标记位置 · 没有找到活动会话");
 					return;
 				}
 				let binding = null;
-				try {
-					binding = this.ctx.sessions && this.ctx.sessions.binding(this.sessionId);
-				} catch {}
+				let release = null;
+				if (targetId === this.sessionId) {
+					try {
+						binding = this.ctx.sessions && this.ctx.sessions.binding(this.sessionId);
+					} catch {}
+				} else {
+					try {
+						const sessions = this.ctx && this.ctx.sessions;
+						if (!sessions || typeof sessions.retain !== "function") {
+							throw new Error("当前 DSH 不支持指定会话");
+						}
+						const reference = sessions.retain(targetId, { source: "agent-ping" });
+						release = () => {
+							try { reference.release(); } catch {}
+						};
+						await reference.ready;
+						binding = reference.binding;
+					} catch (error) {
+						release = null;
+						this.addRecent({ ...meta, sent: false });
+						this.toast("无法打开目标会话：" + (error && error.message ? error.message : "未知错误"), true);
+						return;
+					}
+				}
 				if (!binding || !binding.session) {
+					if (release) release();
 					this.addRecent({ ...meta, sent: false });
 					this.toast("已标记位置 · 会话尚未就绪");
 					return;
@@ -2433,14 +2622,18 @@ window.__ModuleLoader__.load({
 					this.addRecent({ ...meta, sent: false });
 					this.toast("发送失败：" + (error && error.message ? error.message : "未知错误"), true);
 					this.playSound("error");
+				} finally {
+					if (release) release();
 				}
 			}
 
-			openAsk(target, item) {
+			openAsk(target, item, sessionId) {
 				this.hideToast();
 				this.closeWheel(true);
 				this.closeSettings();
-				this.askState = { target, item: item || PINGS[0] };
+				const askSessionId = sessionId || this.sessionId;
+				const askSession = this.sessionOptions().find((row) => row.id === askSessionId);
+				this.askState = { target, item: item || PINGS[0], sessionId: askSessionId };
 				const ctx = target || {};
 				const contextLine = ctx.selector && ctx.selector !== "页面空白处"
 					? ctx.selector
@@ -2472,6 +2665,7 @@ window.__ModuleLoader__.load({
 		<button class="ap-chip" type="button" data-ap-chip="解释这一段">解释这一段</button>
 		<button class="ap-chip" type="button" data-ap-chip="继续从这里工作">继续从这里工作</button>
 	</div>
+	<div class="ap-ask-session">发送到：${esc(askSession ? askSession.title : "当前会话")}</div>
 	<div class="ap-ask-foot">
 		<span class="ap-ask-hint">拖动紫框或四角可调整标记 · Ctrl + Enter 发送 · Esc 取消</span>
 		<button class="ap-send" type="button" data-ap-ask-send>
@@ -2559,6 +2753,7 @@ window.__ModuleLoader__.load({
 				if (send) send.disabled = true;
 				if (label) label.textContent = "发送中";
 				const target = this.askState.target;
+				const targetSessionId = this.askState.sessionId || this.sessionId;
 				const prompt = formatQuestionPrompt(question, target);
 				const item = {
 					id: "question",
@@ -2569,7 +2764,7 @@ window.__ModuleLoader__.load({
 				};
 				this.playSound("send");
 				this.ripple(target, item);
-				this.sendPrompt(prompt, item, target).then((ok) => {
+				this.sendPrompt(prompt, item, target, targetSessionId).then((ok) => {
 					if (send) send.disabled = false;
 					if (label) label.textContent = "发送信号";
 					if (ok) this.closeAsk();

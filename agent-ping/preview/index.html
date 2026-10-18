@@ -483,6 +483,46 @@ window.__ModuleLoader__ = {
 		}
 	};
 
+	function makeSession(title) {
+		return {
+			running: false,
+			getSnapshot: function () { return { running: this.running }; },
+			beginSubmission: function (input) {
+				const node = addPending(input.text);
+				return {
+					requestId: "preview-" + Date.now(),
+					abandon: function () {
+						node.remove();
+						pending = pending.filter(function (item) { return item !== node; });
+					}
+				};
+			},
+			prompt: async function (content) {
+				const text = content.map(function (part) { return part.text || ""; }).join("");
+				await sleep(260);
+				const node = pending.shift();
+				if (node) node.remove();
+				addUser("【发往 " + title + "】" + (text.length > 160 ? text.slice(0, 160) + "…" : text));
+				return { ok: true };
+			}
+		};
+	}
+
+	const otherSessions = {
+		"preview-session-ui": makeSession("UI 调整"),
+		"preview-session-docs": makeSession("文档整理")
+	};
+	const sessionById = {
+		"preview-session": mockSession,
+		"preview-session-ui": otherSessions["preview-session-ui"],
+		"preview-session-docs": otherSessions["preview-session-docs"]
+	};
+	const sessionMeta = {
+		"preview-session": { displayTitle: "仿 lolPing 的 Agent 唤醒工具", updatedAt: Date.now(), running: false },
+		"preview-session-ui": { displayTitle: "UI 调整", updatedAt: Date.now() - 60000, running: true },
+		"preview-session-docs": { displayTitle: "文档整理", updatedAt: Date.now() - 120000, running: false }
+	};
+
 	const slots = [];
 	const ctx = {
 		effect: function (fn) { return fn(); },
@@ -495,8 +535,26 @@ window.__ModuleLoader__ = {
 		},
 		sessions: {
 			binding: function (id) {
-				if (id !== "preview-session") return undefined;
-				return { session: mockSession };
+				const session = sessionById[id];
+				return session ? { session: session } : undefined;
+			},
+			list: {
+				getSnapshot: function () {
+					const ids = Object.keys(sessionMeta);
+					const byId = {};
+					ids.forEach(function (id) {
+						byId[id] = Object.assign({ id: id, blank: false, retainedBy: {} }, sessionMeta[id]);
+					});
+					return { ids: ids, byId: byId, phase: "ready" };
+				}
+			},
+			retain: function (id) {
+				const session = sessionById[id];
+				return {
+					ready: Promise.resolve(),
+					get binding() { return session ? { session: session } : undefined; },
+					release: function () {}
+				};
 			}
 		}
 	};
