@@ -1,0 +1,39 @@
+{
+  "name": "dsh-agent-ping",
+  "version": "0.2.0",
+  "description": "League of Legends style signal wheel for DSH: ping a place, ask about it, and fire custom emote commands at the current agent.",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/bridge.js",
+    "lib/client.js",
+    "cordis.patch.yml",
+    "icon.svg",
+    "README.md"
+  ],
+  "license": "MIT",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-api-remotes",
+        "@deepseek-ai/dsh-api-session-controller",
+        "@deepseek-ai/dsh-client-ui-renderer",
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ]
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "~4.0.5"
+  }
+}

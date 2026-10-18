@@ -1,0 +1,589 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Ping · 演示</title>
+<link rel="icon" href="data:,">
+<style>
+:root {
+	--pv-bg: #080c11;
+	--pv-panel: #0d141c;
+	--pv-panel-2: #111a24;
+	--pv-line: #1d2a36;
+	--pv-text: #d8e0e8;
+	--pv-dim: #778694;
+	--pv-gold: #c8aa6e;
+	--pv-teal: #0ac8b9;
+	--pv-blue: #62b6ff;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+	margin: 0;
+	background:
+		radial-gradient(900px 520px at 68% -10%, rgba(10, 200, 185, .055), transparent 60%),
+		radial-gradient(700px 480px at 8% 115%, rgba(200, 170, 110, .05), transparent 60%),
+		#080c11;
+	color: var(--pv-text);
+	font-family: "Segoe UI", "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+	font-size: 13px;
+	overflow: hidden;
+}
+body::before {
+	content: "";
+	position: fixed;
+	inset: 0;
+	pointer-events: none;
+	background-image:
+		linear-gradient(rgba(255,255,255,.018) 1px, transparent 1px),
+		linear-gradient(90deg, rgba(255,255,255,.018) 1px, transparent 1px);
+	background-size: 48px 48px;
+	mask-image: radial-gradient(circle at 50% 40%, #000, transparent 78%);
+}
+button, input, textarea { font: inherit; }
+.pv-app { height: 100vh; display: flex; flex-direction: column; }
+.pv-top {
+	height: 46px;
+	flex: 0 0 46px;
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 0 14px;
+	border-bottom: 1px solid var(--pv-line);
+	background: rgba(9, 14, 20, .86);
+	backdrop-filter: blur(14px);
+	-webkit-app-region: drag;
+	position: relative;
+	z-index: 4;
+}
+.pv-brand { display: flex; align-items: center; gap: 8px; min-width: 190px; }
+.pv-logo {
+	width: 24px; height: 24px; border-radius: 6px;
+	display: grid; place-items: center;
+	background: radial-gradient(circle at 40% 30%, #1d3c46, #061019);
+	border: 1px solid rgba(200,170,110,.4);
+	color: var(--pv-gold);
+	font-size: 13px; font-weight: 700;
+	box-shadow: 0 0 18px rgba(10,200,185,.08);
+}
+.pv-brand-name { font-size: 11px; letter-spacing: .16em; color: #aebbc9; }
+.pv-brand-name b { color: var(--pv-gold); font-weight: 600; }
+.pv-tabs { display: flex; align-items: center; gap: 2px; flex: 1; min-width: 0; }
+.pv-tab {
+	padding: 6px 10px; border-radius: 5px; color: var(--pv-dim); font-size: 11px;
+	border: 1px solid transparent; white-space: nowrap;
+}
+.pv-tab.active { color: #e9e1d2; background: rgba(200,170,110,.06); border-color: rgba(200,170,110,.16); }
+.pv-top-actions { display: flex; align-items: center; gap: 6px; }
+.pv-icon {
+	width: 28px; height: 28px; display: grid; place-items: center;
+	border-radius: 5px; color: #7f8d9b; border: 1px solid transparent;
+}
+.pv-icon:hover { color: #e9e1d2; border-color: var(--pv-line); background: rgba(255,255,255,.03); }
+.pv-avatar {
+	width: 24px; height: 24px; border-radius: 50%;
+	background: linear-gradient(135deg, #28404b, #0e1a23);
+	border: 1px solid rgba(200,170,110,.28);
+	color: #d9c18f; display: grid; place-items: center; font-size: 9px;
+}
+.pv-body { flex: 1; display: flex; min-height: 0; }
+.pv-side {
+	width: 218px; flex: 0 0 218px;
+	border-right: 1px solid var(--pv-line);
+	background: rgba(9, 14, 20, .42);
+	padding: 12px 10px;
+	display: flex; flex-direction: column; gap: 12px;
+}
+.pv-side-title { font-size: 9px; letter-spacing: .2em; color: #55636f; padding: 0 6px; }
+.pv-new {
+	display: flex; align-items: center; gap: 8px;
+	padding: 8px 9px; border: 1px solid rgba(200,170,110,.2);
+	border-radius: 6px; color: #d9c18f; font-size: 11px;
+	background: rgba(200,170,110,.045);
+}
+.pv-new:hover { background: rgba(200,170,110,.08); }
+.pv-session {
+	display: flex; flex-direction: column; gap: 3px;
+	padding: 8px 9px; border-radius: 6px;
+	border: 1px solid transparent; color: #8996a4; font-size: 11px;
+}
+.pv-session.active { background: rgba(10,200,185,.045); border-color: rgba(10,200,185,.13); color: #d8e0e8; }
+.pv-session small { color: #596775; font-size: 9px; }
+.pv-side-foot { margin-top: auto; font-size: 9px; color: #4c5b68; line-height: 1.7; padding: 0 6px; }
+.pv-main { flex: 1; min-width: 0; display: flex; flex-direction: column; position: relative; }
+.pv-chat-head {
+	height: 52px; flex: 0 0 52px;
+	display: flex; align-items: center; justify-content: space-between;
+	padding: 0 20px;
+	border-bottom: 1px solid rgba(29,42,54,.65);
+	background: rgba(8,12,17,.4);
+}
+.pv-chat-title { font-size: 12px; color: #aab7c4; font-weight: 500; }
+.pv-chat-title span { color: #5d6b78; font-weight: 400; margin-left: 7px; font-size: 10px; }
+.pv-head-actions { display: flex; gap: 5px; }
+.pv-chip {
+	display: inline-flex; align-items: center; gap: 6px;
+	padding: 4px 8px; border-radius: 999px;
+	border: 1px solid rgba(10,200,185,.18);
+	background: rgba(10,200,185,.035);
+	color: #7fc9c2; font-size: 9px; letter-spacing: .04em;
+}
+.pv-chip .dot { width: 4px; height: 4px; border-radius: 50%; background: var(--pv-teal); box-shadow: 0 0 6px var(--pv-teal); }
+.pv-messages {
+	flex: 1; overflow: auto;
+	padding: 26px 26px 10px;
+	scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.12) transparent;
+}
+.pv-thread { width: min(820px, 100%); margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+.pv-hint {
+	display: flex; align-items: center; gap: 10px;
+	padding: 9px 12px;
+	border: 1px solid rgba(200,170,110,.13);
+	border-radius: 7px;
+	background: linear-gradient(90deg, rgba(200,170,110,.045), rgba(10,200,185,.025));
+	color: #8f9ba7; font-size: 10px;
+}
+.pv-hint b { color: #d9c18f; font-weight: 600; }
+.pv-hint kbd {
+	padding: 1px 5px; border-radius: 3px;
+	border: 1px solid rgba(200,170,110,.26);
+	background: rgba(200,170,110,.06);
+	color: #d9c18f; font-family: inherit; font-size: 9px;
+}
+.pv-msg { display: flex; gap: 10px; }
+.pv-msg.user { flex-direction: row-reverse; }
+.pv-msg-avatar {
+	width: 24px; height: 24px; flex: 0 0 24px; border-radius: 7px;
+	display: grid; place-items: center;
+	background: #14202b; border: 1px solid #223342; color: #8ea0b1; font-size: 9px;
+}
+.pv-msg.user .pv-msg-avatar { background: #23321f; border-color: #3d5538; color: #b6d39e; }
+.pv-msg-body { min-width: 0; max-width: 86%; }
+.pv-msg.user .pv-msg-body { display: flex; flex-direction: column; align-items: flex-end; }
+.pv-msg-name { font-size: 9px; color: #5f6d7a; margin-bottom: 4px; letter-spacing: .04em; }
+.pv-msg.user .pv-msg-name { text-align: right; }
+.pv-bubble {
+	padding: 9px 12px; border-radius: 8px;
+	background: rgba(17,26,36,.72);
+	border: 1px solid rgba(35,51,66,.8);
+	line-height: 1.65; color: #c4cdd6; font-size: 12px;
+}
+.pv-msg.user .pv-bubble { background: rgba(31,46,34,.48); border-color: rgba(61,85,56,.55); color: #d5e0cb; }
+.pv-bubble p { margin: 0 0 7px; }
+.pv-bubble p:last-child { margin-bottom: 0; }
+.pv-bubble strong { color: #eadfc8; font-weight: 600; }
+.pv-bubble .muted { color: #758493; }
+.pv-code {
+	margin: 8px 0 2px;
+	border: 1px solid #223141;
+	border-radius: 7px;
+	overflow: hidden;
+	background: #0a1017;
+	font-family: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+	font-size: 10.5px; line-height: 1.75;
+}
+.pv-code-bar {
+	display: flex; align-items: center; justify-content: space-between;
+	padding: 5px 9px; background: #0e1720; border-bottom: 1px solid #1b2936;
+	color: #647381; font-size: 9px; letter-spacing: .05em;
+}
+.pv-code-bar em { color: #a58a59; font-style: normal; }
+.pv-code pre { margin: 0; padding: 8px 10px; overflow: auto; color: #b8c6d2; }
+.pv-code .ln { display: inline-block; width: 24px; color: #41505e; text-align: right; margin-right: 10px; user-select: none; }
+.pv-code .kw { color: #c792ea; }
+.pv-code .fn { color: #82aaff; }
+.pv-code .str { color: #c3e88d; }
+.pv-code .num { color: #f78c6c; }
+.pv-code .cm { color: #546e7a; }
+.pv-pending .pv-bubble { opacity: .62; border-style: dashed; }
+.pv-typing { display: inline-flex; gap: 3px; align-items: center; height: 15px; }
+.pv-typing i { width: 4px; height: 4px; border-radius: 50%; background: #7f8d9b; animation: pv-bounce 1s infinite; }
+.pv-typing i:nth-child(2) { animation-delay: .12s; }
+.pv-typing i:nth-child(3) { animation-delay: .24s; }
+@keyframes pv-bounce { 0%, 60%, 100% { transform: translateY(0); opacity: .4; } 30% { transform: translateY(-3px); opacity: 1; } }
+.pv-composer-wrap { flex: 0 0 auto; padding: 10px 26px 18px; }
+.pv-composer {
+	width: min(820px, 100%); margin: 0 auto;
+	border: 1px solid #22313f; border-radius: 9px;
+	background: linear-gradient(180deg, rgba(17,26,36,.92), rgba(11,17,24,.94));
+	box-shadow: 0 16px 50px rgba(0,0,0,.3);
+	overflow: hidden;
+}
+.pv-composer:focus-within { border-color: rgba(10,200,185,.35); box-shadow: 0 0 0 1px rgba(10,200,185,.08), 0 16px 50px rgba(0,0,0,.3); }
+.pv-composer textarea {
+	display: block; width: 100%; height: 62px; resize: none;
+	border: 0; outline: 0; background: transparent;
+	color: #d8e0e8; padding: 11px 13px 4px; font-size: 12px; line-height: 1.5;
+}
+.pv-composer textarea::placeholder { color: #53616e; }
+.pv-composer-foot { display: flex; align-items: center; justify-content: space-between; padding: 5px 9px 8px 11px; }
+.pv-composer-tools { display: flex; gap: 5px; align-items: center; }
+.pv-tool { padding: 3px 7px; border-radius: 4px; color: #63727f; font-size: 9px; border: 1px solid transparent; }
+.pv-tool:hover { color: #aab7c4; border-color: #22313f; }
+.pv-send {
+	padding: 5px 11px; border-radius: 5px;
+	background: linear-gradient(135deg, #d8bc82, #a9864d);
+	color: #061019; font-size: 10px; font-weight: 650;
+}
+.pv-side-right {
+	width: 208px; flex: 0 0 208px;
+	border-left: 1px solid var(--pv-line);
+	background: rgba(9,14,20,.34);
+	padding: 13px 12px;
+	color: #758493;
+}
+.pv-right-title { font-size: 9px; letter-spacing: .18em; color: #55636f; margin-bottom: 9px; }
+.pv-file { display: flex; align-items: center; gap: 7px; padding: 5px 6px; border-radius: 4px; font-size: 10px; color: #8796a5; }
+.pv-file:hover { background: rgba(255,255,255,.03); }
+.pv-file .ft { width: 13px; height: 13px; border: 1px solid #38495a; border-radius: 2px; display: grid; place-items: center; font-size: 7px; color: #738494; }
+.pv-file.active { background: rgba(200,170,110,.055); color: #d4c3a1; }
+.pv-right-note { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--pv-line); font-size: 9px; line-height: 1.8; color: #4f5e6b; }
+.pv-demo {
+	position: fixed; right: 14px; bottom: 14px; z-index: 60;
+	display: flex; align-items: center; gap: 5px;
+	padding: 5px; border: 1px solid rgba(200,170,110,.18);
+	border-radius: 7px; background: rgba(7,12,17,.82);
+	backdrop-filter: blur(12px); box-shadow: 0 10px 30px rgba(0,0,0,.4);
+}
+.pv-demo-label { padding: 0 5px; font-size: 8px; letter-spacing: .14em; color: #687786; }
+.pv-demo button {
+	padding: 4px 7px; border-radius: 4px; border: 1px solid rgba(200,170,110,.14);
+	background: rgba(200,170,110,.04); color: #b7a57f; font-size: 9px;
+}
+.pv-demo button:hover { color: #f0e6d2; border-color: rgba(200,170,110,.45); background: rgba(200,170,110,.08); }
+body.clean .pv-demo { display: none; }
+@media (max-width: 1000px) { .pv-side-right { display: none; } }
+@media (max-width: 760px) { .pv-side { display: none; } .pv-messages { padding: 18px 14px 6px; } .pv-composer-wrap { padding: 8px 14px 14px; } }
+</style>
+</head>
+<body>
+<div class="pv-app">
+	<header class="pv-top">
+		<div class="pv-brand">
+			<div class="pv-logo">D</div>
+			<div class="pv-brand-name">DEEPSEEK <b>HARNESS</b></div>
+		</div>
+		<div class="pv-tabs">
+			<div class="pv-tab active">会话</div>
+			<div class="pv-tab">工作区</div>
+			<div class="pv-tab">插件</div>
+		</div>
+		<div class="pv-top-actions">
+			<button class="pv-icon" title="搜索">⌕</button>
+			<button class="pv-icon" title="设置">⚙</button>
+			<div class="pv-avatar">B</div>
+		</div>
+	</header>
+	<div class="pv-body">
+		<aside class="pv-side">
+			<div class="pv-side-title">SESSIONS</div>
+			<div class="pv-new">＋ 新建会话</div>
+			<div class="pv-session active">LoL 信号轮盘<span>正在实现 Agent Ping</span><small>刚刚</small></div>
+			<div class="pv-session">修复登录态过期<span>已完成 · 3 个文件</span><small>昨天</small></div>
+			<div class="pv-session">重构工作区监听<span>已归档</span><small>10 月 16 日</small></div>
+			<div class="pv-side-foot">Agent Ping 预览<br>Shift+Alt+Q / E 试试</div>
+		</aside>
+		<main class="pv-main">
+			<div class="pv-chat-head">
+				<div class="pv-chat-title">LoL 信号轮盘 <span>workspace / agent_wake</span></div>
+				<div class="pv-head-actions">
+					<div class="pv-chip"><span class="dot"></span> Agent 在线</div>
+					<button class="pv-icon" title="更多">⋯</button>
+				</div>
+			</div>
+			<div class="pv-messages" id="pv-messages">
+				<div class="pv-thread" id="pv-thread">
+					<div class="pv-hint">
+						<span>试试在界面上标记：</span>
+						<b>按 <kbd>Shift</kbd>+<kbd>Alt</kbd>+<kbd>Q</kbd></b><span>打开信号轮盘，移动后点击扇区</span>
+						<span style="opacity:.5">·</span>
+						<b>按 <kbd>Shift</kbd>+<kbd>Alt</kbd>+<kbd>E</kbd></b><span>打开表情快捷指令</span>
+					</div>
+					<div class="pv-msg">
+						<div class="pv-msg-avatar">D</div>
+						<div class="pv-msg-body">
+							<div class="pv-msg-name">DEEPSEEK</div>
+							<div class="pv-bubble">
+								<p>轮盘骨架已经接进 DSH 客户端了。现在需要你验证交互：标记位置后提问，或者用表情轮盘发快捷指令。</p>
+								<p class="muted">试着把光标放到下面这段代码中间，按 <strong>Shift+Alt+Q</strong>，选“提问”。</p>
+								<div class="pv-code" id="pv-code">
+									<div class="pv-code-bar"><span>agent-ping/lib/client.js</span><em>2,427 lines</em></div>
+									<pre><span class="ln">1</span><span class="kw">function</span> <span class="fn">fireWheel</span>() {
+<span class="ln">2</span>  <span class="kw">const</span> target = captureTarget(x, y);
+<span class="ln">3</span>  <span class="kw">const</span> prompt = formatQuestionPrompt(question, target);
+<span class="ln">4</span>  <span class="kw">return</span> session.<span class="fn">prompt</span>([{ type: <span class="str">"text"</span>, text: prompt }]);
+<span class="ln">5</span>}</pre>
+								</div>
+							</div>
+						</div>
+					</div>
+					<div class="pv-msg user">
+						<div class="pv-msg-avatar">B</div>
+						<div class="pv-msg-body">
+							<div class="pv-msg-name">YOU</div>
+							<div class="pv-bubble">参考 LoL 的交互：用 Shift+Alt+Q 打开信号轮盘，问号要能对标记地点提问；Shift+Alt+E 的表情轮盘可自定义快捷指令，比如“继续工作”。</div>
+						</div>
+					</div>
+					<div class="pv-msg">
+						<div class="pv-msg-avatar">D</div>
+						<div class="pv-msg-body">
+							<div class="pv-msg-name">DEEPSEEK</div>
+							<div class="pv-bubble">
+								<p>已实现。信号分两层：<strong>智能信号轮盘</strong>负责定位与上下文，<strong>表情轮盘</strong>负责一次性快捷指令。两者都会唤醒当前会话。</p>
+								<p class="muted">标记位置会附带元素选择器、附近文本和坐标；提问会打开锚定在标记点的输入框。</p>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+			<div class="pv-composer-wrap">
+				<div class="pv-composer">
+					<textarea placeholder="给 Agent 发消息…  (Ctrl + Enter 发送)"></textarea>
+					<div class="pv-composer-foot">
+						<div class="pv-composer-tools">
+							<button class="pv-tool">@ 文件</button>
+							<button class="pv-tool">/ 命令</button>
+							<button class="pv-tool">⌘ 技能</button>
+						</div>
+						<button class="pv-send">发送</button>
+					</div>
+				</div>
+			</div>
+		</main>
+		<aside class="pv-side-right">
+			<div class="pv-right-title">FILES</div>
+			<div class="pv-file active"><span class="ft">JS</span> client.js</div>
+			<div class="pv-file"><span class="ft">JS</span> index.js</div>
+			<div class="pv-file"><span class="ft">YML</span> cordis.patch.yml</div>
+			<div class="pv-file"><span class="ft">MD</span> README.md</div>
+			<div class="pv-right-note">This is a standalone preview of the DSH client plugin. The real wheel mounts over the live DSH conversation and sends to the active session.</div>
+		</aside>
+	</div>
+</div>
+
+<div class="pv-demo">
+	<span class="pv-demo-label">DEMO</span>
+	<button type="button" data-demo="ping">信号轮盘</button>
+	<button type="button" data-demo="emote">表情轮盘</button>
+	<button type="button" data-demo="ask">提问框</button>
+	<button type="button" data-demo="settings">设置</button>
+</div>
+
+<script>
+window.__ModuleLoader__ = {
+	load: function (entry) {
+		window.__agentPingModule = entry.factory(function require(name) {
+			throw new Error("preview has no module: " + name);
+		});
+	}
+};
+</script>
+<script src="../lib/client.js"></script>
+<script>
+(function () {
+	const params = new URLSearchParams(location.search);
+	if (params.get("clean") === "1") document.body.classList.add("clean");
+
+	const thread = document.getElementById("pv-thread");
+	const messages = document.getElementById("pv-messages");
+	const code = document.getElementById("pv-code");
+	const composer = document.querySelector(".pv-composer textarea");
+	const sendButton = document.querySelector(".pv-send");
+	let pending = [];
+
+	function sleep(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
+
+	function scrollBottom() {
+		messages.scrollTop = messages.scrollHeight;
+	}
+
+	function addUser(text) {
+		const node = document.createElement("div");
+		node.className = "pv-msg user";
+		node.innerHTML = '<div class="pv-msg-avatar">B</div><div class="pv-msg-body"><div class="pv-msg-name">YOU</div><div class="pv-bubble"></div></div>';
+		node.querySelector(".pv-bubble").textContent = text;
+		thread.appendChild(node);
+		scrollBottom();
+		return node;
+	}
+
+	function addPending(text) {
+		const node = document.createElement("div");
+		node.className = "pv-msg user pv-pending";
+		node.innerHTML = '<div class="pv-msg-avatar">B</div><div class="pv-msg-body"><div class="pv-msg-name">YOU · 发送中</div><div class="pv-bubble"></div></div>';
+		node.querySelector(".pv-bubble").textContent = text;
+		thread.appendChild(node);
+		scrollBottom();
+		pending.push(node);
+		return node;
+	}
+
+	function addAssistant(text) {
+		const node = document.createElement("div");
+		node.className = "pv-msg";
+		node.innerHTML = '<div class="pv-msg-avatar">D</div><div class="pv-msg-body"><div class="pv-msg-name">DEEPSEEK</div><div class="pv-bubble"></div></div>';
+		const bubble = node.querySelector(".pv-bubble");
+		const typing = document.createElement("span");
+		typing.className = "pv-typing";
+		typing.innerHTML = "<i></i><i></i><i></i>";
+		bubble.appendChild(typing);
+		thread.appendChild(node);
+		scrollBottom();
+		setTimeout(function () {
+			bubble.textContent = text;
+			scrollBottom();
+		}, 520);
+		return node;
+	}
+
+	function replyFor(text) {
+		if (text.indexOf("提问") >= 0 || text.indexOf("我的问题") >= 0) {
+			return "我看到了你标记的位置：client.js 里的 fireWheel。这里的关键是先拿到 target，再把问题、选择器和附近文本一起交给 session.prompt。建议把 fireWheel 的 target 捕获提前到轮盘打开时，避免鼠标移动后位置漂移。";
+		}
+		if (text.indexOf("继续工作") >= 0) {
+			return "收到，继续推进。我会先把轮盘的 target 捕获和 sendPrompt 的错误处理收尾，然后跑一遍预览回归。";
+		}
+		if (text.indexOf("跑测试") >= 0) {
+			return "已开始检查关键路径：轮盘打开/关闭、提问发送、表情快捷指令、设置持久化。当前没有阻塞性问题。";
+		}
+		if (text.indexOf("危险") >= 0 || text.indexOf("注意这里") >= 0) {
+			return "收到危险信号。我会先检查这个位置的风险，不立刻改动。初步看是 target 捕获时机可能和 overlay 层级冲突，需要确认 elementFromPoint 没有命中轮盘自身。";
+		}
+		if (text.indexOf("先停") >= 0 || text.indexOf("等一下") >= 0) {
+			return "已停下，保持当前状态。当前改动都在工作区，未提交。";
+		}
+		if (text.indexOf("解释") >= 0) {
+			return "这一版的核心是一条链路：Shift+Alt+Q → 捕获光标下的元素 → 移动并点击扇区 → 把“信号 + 上下文”发送到当前 session.prompt。表情轮盘复用同一套发送逻辑，只是把标签和指令换成可配置的表情。";
+		}
+		return "信号收到。我会结合你标记的位置继续处理，并把结果回报在会话里。";
+	}
+
+	const mockSession = {
+		running: false,
+		getSnapshot: function () { return { running: this.running }; },
+		beginSubmission: function (input) {
+			const node = addPending(input.text);
+			return {
+				requestId: "preview-" + Date.now(),
+				abandon: function () {
+					node.remove();
+					pending = pending.filter(function (item) { return item !== node; });
+				}
+			};
+		},
+		prompt: async function (content) {
+			const text = content.map(function (part) { return part.text || ""; }).join("");
+			await sleep(320);
+			const node = pending.shift();
+			if (node) node.remove();
+			addUser(text.length > 220 ? text.slice(0, 220) + "…" : text);
+			addAssistant(replyFor(text));
+			return { ok: true };
+		}
+	};
+
+	const slots = [];
+	const ctx = {
+		effect: function (fn) { return fn(); },
+		slots: {
+			inject: function (name, callback) { callback(); },
+			register: function (definition, component) {
+				slots.push({ definition: definition, component: component });
+				return function () {};
+			}
+		},
+		sessions: {
+			binding: function (id) {
+				if (id !== "preview-session") return undefined;
+				return { session: mockSession };
+			}
+		}
+	};
+
+	const controller = window.__agentPingModule.apply(ctx);
+	const bridge = slots.find(function (entry) { return entry.definition.id === "agent-ping-session-bridge"; });
+	if (bridge && typeof bridge.definition.inject === "function") bridge.definition.inject("preview-session");
+
+	function targetPoint() {
+		const rect = code.getBoundingClientRect();
+		return { x: rect.left + rect.width * 0.58, y: rect.top + rect.height * 0.48 };
+	}
+
+	function openPing() {
+		controller.closeWheel(true);
+		controller.closeAsk();
+		controller.closeSettings();
+		const point = targetPoint();
+		controller.openWheel("ping", point, window.__agentPingModule.captureTarget(point.x, point.y));
+	}
+
+	function openEmote() {
+		controller.closeWheel(true);
+		controller.closeAsk();
+		controller.closeSettings();
+		const rect = code.getBoundingClientRect();
+		const point = { x: rect.left + rect.width * 0.44, y: rect.top + rect.height * 0.4 };
+		controller.openWheel("emote", point, window.__agentPingModule.captureTarget(point.x, point.y));
+	}
+
+	function openAsk() {
+		controller.closeWheel(true);
+		controller.closeAsk();
+		controller.closeSettings();
+		const point = targetPoint();
+		controller.openAsk(window.__agentPingModule.captureTarget(point.x, point.y));
+	}
+
+	function openSettings() { controller.openSettings(); }
+	function closeAll() {
+		controller.closeWheel(true);
+		controller.closeAsk();
+		controller.closeSettings();
+	}
+
+	window.__agentPingDemo = {
+		openPing: openPing,
+		openEmote: openEmote,
+		openAsk: openAsk,
+		openSettings: openSettings,
+		close: closeAll,
+		controller: controller,
+		targetPoint: targetPoint
+	};
+
+	document.querySelectorAll("[data-demo]").forEach(function (button) {
+		button.addEventListener("click", function () {
+			const action = button.getAttribute("data-demo");
+			if (action === "ping") openPing();
+			else if (action === "emote") openEmote();
+			else if (action === "ask") openAsk();
+			else if (action === "settings") openSettings();
+		});
+	});
+
+	sendButton.addEventListener("click", function () {
+		const text = composer.value.trim();
+		if (!text) return;
+		composer.value = "";
+		mockSession.beginSubmission({ text: text });
+		mockSession.prompt([{ type: "text", text: text }]);
+	});
+	composer.addEventListener("keydown", function (event) {
+		if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+			event.preventDefault();
+			sendButton.click();
+		}
+	});
+
+	// Make the mock conversation usable as a demo target: clicking the code
+	// block highlights it, but never blocks the wheel's own listeners.
+	code.addEventListener("click", function () {
+		const point = targetPoint();
+		controller.toast("现在按 Shift+Alt+Q 或 Shift+Alt+E，在光标处打开轮盘");
+		controller.lastPointer = point;
+	});
+})();
+</script>
+</body>
+</html>

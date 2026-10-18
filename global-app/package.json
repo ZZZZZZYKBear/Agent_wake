@@ -1,0 +1,17 @@
+{
+  "name": "agent-ping-global",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Global desktop signal wheel for DSH Agent Ping.",
+  "main": "main.js",
+  "scripts": {
+    "sync": "node scripts/sync-client.mjs",
+    "start": "npm run sync && electron .",
+    "demo": "npm run sync && electron . --demo=ping",
+    "package": "npm run sync && electron-packager . AgentPing --platform=win32 --arch=x64 --out=release --overwrite --icon=assets/icon.ico --ignore=\"^/(node_modules|\\.pack-cache|\\.npm-cache|\\.electron-profile|\\.hotkey-profile|\\.final-profile|\\.task-profile|\\.data|\\.cmd-profile.*|release|test-.*\\.js|app-.*\\.txt|h-.*\\.txt|p-.*\\.txt|task.*\\.log|agent-ping-global\\.log)\" && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-shortcut.ps1"
+  },
+  "devDependencies": {
+    "@electron/packager": "^20.3.0",
+    "electron": "^44.9.0"
+  }
+}

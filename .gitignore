@@ -1,0 +1,21 @@
+# Dependencies
+global-app/node_modules/
+
+# Local caches and test scaffolding
+global-app/.npm-cache/
+global-app/.test-cache/
+global-app/.test-tools/
+global-app/.data/
+
+# Packaged Electron build (rebuilt with `npm run package`)
+global-app/release/
+
+# Runtime / log data
+*.log
+**/AgentPingData/
+**/DevToolsActivePort
+
+# OS and editor noise
+Thumbs.db
+desktop.ini
+.DS_Store
