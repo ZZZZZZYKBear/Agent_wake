@@ -34,7 +34,7 @@
 
 - 常驻托盘，注册系统级快捷键；DSH 可以在后台或最小化。
 - 在当前光标所在显示器上打开透明悬浮轮盘；不切走前台应用。
-- 打开前自动截取光标周围约 430×300 的屏幕区域，保存到 `%USERPROFILE%\.dsh\agent-ping\shots\`。
+- 打开前自动截取光标周围约 430×300 的屏幕区域，保存到 `%USERPROFILE%\.dsh\agent-ping\shots\`；该目录不可写时自动改存到程序目录的 `AgentPingData\shots\`，日志里会写明实际路径。
 - 信号内容包含截图路径、显示器和全局坐标；提问框里还会显示截图预览。
 - 桥接不可用时信号会在内存中排队，DSH 恢复后自动重试。
 - 托盘菜单显示实际快捷键和连接状态。
@@ -253,6 +253,7 @@ npm run package
 - 全局快捷键使用 `Shift+Alt+字母`；极少数被占用时会自动降级，以托盘菜单显示的实际键位为准。
 - 全局桥接只监听 `127.0.0.1`；`/signal` 需要 token，`/events` 只读。
 - 全局轮盘用首次 pointermove 定位，避免 1.5× DPI 下轮盘中心/激光线与光标偏移；全局模式关闭了背景模糊、旋转符文和阴影，默认启用硬件加速以降低卡顿。
+- 截图失败不再静默：`desktopCapturer` 异常、空缩略图、目录不可写都会写进 `AgentPingData\agent-ping-global.log`；拿不到缩略图时会用 DPI-aware 的 GDI 截屏兜底，`~/.dsh` 不可写时改存程序目录。可运行 `AgentPingCore.exe --no-sandbox --capture-test` 单独验证截图链路。
 - 多显示器混合缩放仍属于需要继续验证的场景。
 - 音效由 Web Audio 合成，不含 LoL 原始音频或素材；图标为内联 SVG。
 - 交互灵感来自 [darrenprx/lolPing](https://github.com/darrenprx/lolPing)，本项目没有复用其代码或资源。

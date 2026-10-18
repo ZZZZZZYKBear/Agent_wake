@@ -6,7 +6,6 @@ const {
   Menu,
   ipcMain,
   screen,
-  desktopCapturer,
   nativeImage,
   Notification,
   dialog
@@ -15,6 +14,7 @@ const path = require("node:path");
 const fs = require("node:fs");
 const os = require("node:os");
 const http = require("node:http");
+const { captureTarget } = require("./capture");
 
 const APP_ID = "com.deepseek.agentping.global";
 const exeDir = app.isPackaged ? path.dirname(process.execPath) : path.join(__dirname, ".data");
@@ -200,60 +200,12 @@ async function flushOutbox() {
   updateTray();
 }
 
-function screenshotPath() {
-  const home = process.env.DSH_HOME || path.join(os.homedir(), ".dsh");
-  return path.join(home, "agent-ping", "shots");
-}
-
-async function captureTarget(display, point) {
-  const scale = display.scaleFactor || 1;
-  const width = Math.max(1, Math.round(display.size.width * scale));
-  const height = Math.max(1, Math.round(display.size.height * scale));
-  let sources = [];
-  try {
-    sources = await desktopCapturer.getSources({
-      types: ["screen"],
-      thumbnailSize: { width, height },
-      fetchWindowIcons: false
-    });
-  } catch {
-    return null;
-  }
-  if (!sources || sources.length === 0) return null;
-  let source = sources.find((item) => String(item.display_id) === String(display.id));
-  if (!source) source = sources.find((item) => item.name && item.name === display.label);
-  if (!source) source = sources[0];
-  const image = source.thumbnail;
-  if (!image || image.isEmpty()) return null;
-  const imageSize = image.getSize();
-  if (!imageSize.width || !imageSize.height) return null;
-  const localX = point.x - display.bounds.x;
-  const localY = point.y - display.bounds.y;
-  const px = Math.round((localX / Math.max(1, display.bounds.width)) * imageSize.width);
-  const py = Math.round((localY / Math.max(1, display.bounds.height)) * imageSize.height);
-  const cropWidth = Math.min(imageSize.width, Math.max(240, Math.round(430 * scale)));
-  const cropHeight = Math.min(imageSize.height, Math.max(180, Math.round(300 * scale)));
-  const x = Math.max(0, Math.min(imageSize.width - cropWidth, Math.round(px - cropWidth / 2)));
-  const y = Math.max(0, Math.min(imageSize.height - cropHeight, Math.round(py - cropHeight / 2)));
-  let crop;
-  try {
-    crop = image.crop({ x, y, width: cropWidth, height: cropHeight });
-  } catch {
-    return null;
-  }
-  try {
-    const dir = screenshotPath();
-    fs.mkdirSync(dir, { recursive: true });
-    const file = path.join(dir, `global-${Date.now()}.png`);
-    fs.writeFileSync(file, crop.toPNG());
-    return { path: file, width: cropWidth, height: cropHeight, dataUrl: crop.toDataURL() };
-  } catch {
-    return null;
-  }
-}
-
 async function buildTarget(display, point) {
-  const shot = await captureTarget(display, point).catch(() => null);
+  const shot = await captureTarget(display, point, { log }).catch((error) => {
+    log("capture: unexpected failure", error && error.message);
+    return null;
+  });
+  if (!shot) log("capture: no screenshot available", display.label);
   const localX = point.x - display.bounds.x;
   const localY = point.y - display.bounds.y;
   const displayLabel = display.label || `显示器 ${display.id}`;
@@ -559,6 +511,21 @@ ipcMain.handle("send-signal", async (event, payload) => {
 });
 
 app.whenReady().then(() => {
+  if (process.argv.includes("--capture-test")) {
+    const display = screen.getPrimaryDisplay();
+    const point = screen.getCursorScreenPoint();
+    buildTarget(display, point)
+      .then((target) => {
+        log("capture-test", {
+          point,
+          text: target && target.text,
+          preview: Boolean(target && target.preview)
+        });
+      })
+      .catch((error) => log("capture-test failed", error && error.message))
+      .finally(() => app.quit());
+    return;
+  }
   log("ready", { electron: process.versions.electron, dshHome: process.env.DSH_HOME || "" });
   createTray();
   registerHotkeys();

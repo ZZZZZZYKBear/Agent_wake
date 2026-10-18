@@ -79,6 +79,16 @@ The overlay captures the screen around the cursor before showing itself, saves a
 %USERPROFILE%\.dsh\agent-ping\shots\
 ```
 
+If that folder is not writable for the app (for example because `~/.dsh` is locked down by a sandbox ACL), the PNG is saved to `AgentPingData\shots\` next to the executable instead. The log records which folder was used, and every capture failure (exception, empty thumbnail, unwritable folder) is logged rather than swallowed. `desktopCapturer` is tried first; if it yields nothing, a DPI-aware GDI capture via PowerShell is used as fallback.
+
+To test capture without opening the wheel:
+
+```powershell
+AgentPingCore.exe --no-sandbox --capture-test
+```
+
+It captures once, writes the result to `AgentPingData\agent-ping-global.log`, and exits.
+
 and sends:
 
 - the prompt text (`提问` / `危险` / `继续工作` / custom emote command)
