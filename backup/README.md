@@ -3,10 +3,31 @@
 `dsh-agent-ping-0.2.0-2026-10-20.zip` 是从本仓库单独整理出来的 **DSH 插件版**快照，
 用于留档和独立分发。它不依赖 `standalone/` 里的独立版代码。
 
+## 稳定安装（开发期间照常使用）
+
+DSH 的 `desktop` profile 现在链接到仓库外的冻结副本：
+
+```text
+D:\Mydocument\projects\agent-ping-stable\plugin
+```
+
+```json
+"dsh-agent-ping": "link:D:/Mydocument/projects/agent-ping-stable/plugin"
+```
+
+这样在 `agent_wake` 仓库里继续开发（改 `standalone/`、`global-app/`）**不会**改变你正在用的
+DSH 插件。稳定副本里的 `lib/client.js` 与归档时的仓库版本 sha256 一致
+（`9f05923b…085ee0`）。
+
+注意：切换链接后，正在运行的 DSH 进程里 Host 半侧仍是切换前加载的同一份代码（内容相同）；
+**重启一次 DSH** 后才会完全从稳定副本加载。重启前请不要改动 `agent_wake/agent-ping/`，
+开发工作会集中在 `standalone/` 与新的独立版 UI 上。
+
 | 项 | 值 |
 | --- | --- |
 | 插件版本 | `dsh-agent-ping@0.2.0` |
 | 对应 `main` 提交 | `bd22fd6e3fb31e44517580b80fb232e4f725c52b` |
+| 稳定副本 | `D:\Mydocument\projects\agent-ping-stable\plugin` |
 | 打包含量 | `dist/dsh-agent-ping-0.2.0.tgz`（sha256 `99e07f6d…072c01`） |
 | 备份文件 | `backup/dsh-agent-ping-0.2.0-2026-10-20.zip`（约 85 KB） |
 
