@@ -92,6 +92,11 @@ AgentPingCore.exe --no-sandbox --target=hub
 AgentPingCore.exe --no-sandbox --target=dsh
 ```
 
+**启动时自动开启独立 Hub** (settings → 启动与快捷键) makes the tray app start its
+embedded hub and switch delivery to it on every launch, so the wheel is usable
+without touching the settings first. The flag is stored as `autoHub` in the same
+`global.json`; it is off by default.
+
 Because the hub is agent-agnostic, the inline screenshot data URL is dropped for
 hub sends (the `target.text` still carries the saved screenshot path); a test
 signal is under 1 KB instead of ~150 KB.

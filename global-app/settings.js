@@ -42,6 +42,7 @@ function render() {
   $("#hub-copy").disabled = !hub.running;
 
   $("#autostart").checked = Boolean(state.autostart);
+  $("#autohub").checked = Boolean(state.autoHub);
 
   $("#keys").innerHTML = Object.entries(state.hotkeys)
     .map(([kind, value]) => `<span class="key"><b>${LABELS[kind] || kind}</b><code>${value || "未注册"}</code></span>`)
@@ -98,6 +99,13 @@ $("#autostart").addEventListener("change", async (event) => {
   if (state) state.autostart = enabled;
   render();
   toast(enabled ? "已开启开机启动" : "已关闭开机启动");
+});
+
+$("#autohub").addEventListener("change", async (event) => {
+  const enabled = await api.setAutoHub(event.target.checked);
+  if (state) state.autoHub = enabled;
+  render();
+  toast(enabled ? "下次启动会自动开启 Hub" : "已关闭自动开启 Hub");
 });
 
 $("#close").addEventListener("click", () => api.close());

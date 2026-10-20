@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld("agentPingSettings", {
   startHub: () => ipcRenderer.invoke("settings:start-hub"),
   stopHub: () => ipcRenderer.invoke("settings:stop-hub"),
   setAutostart: (value) => ipcRenderer.invoke("settings:set-autostart", value),
+  setAutoHub: (value) => ipcRenderer.invoke("settings:set-autohub", value),
   copy: (text) => ipcRenderer.invoke("settings:copy", text),
   close: () => ipcRenderer.send("settings:close")
 });

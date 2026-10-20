@@ -113,7 +113,9 @@ Newer builds ship a real settings window (`settings.html`) next to the wheel:
 - **独立 Hub**: start/stop the hub inside the tray app; the address and mode
   (embedded/external) are shown. Starting it from here also switches delivery.
 - **接入 CLI Agent**: copy-ready attach commands for Codex / Claude Code.
-- **启动与快捷键**: autostart with Windows and the hotkeys that registered.
+- **启动与快捷键**: autostart with Windows, **启动时自动开启独立 Hub** (starts the
+  embedded hub and switches delivery on every launch), and the hotkeys that
+  registered.
 
 The tray icon stays alive in the background; double-click it to open the
 settings, or use tray → 应用设置….

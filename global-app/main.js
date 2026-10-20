@@ -142,6 +142,26 @@ function readTransport() {
   return null;
 }
 
+/** Merge a patch into every writable global config file. */
+function updateGlobalConfig(mutate) {
+  const next = mutate({ ...readGlobalConfig() });
+  let written = null;
+  for (const file of globalConfigFiles()) {
+    try {
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, JSON.stringify(next, null, 2), "utf8");
+      written = file;
+    } catch (error) {
+      log("config write failed", file, error && error.code);
+    }
+  }
+  return written;
+}
+
+function readAutoHub() {
+  return Boolean(readGlobalConfig().autoHub);
+}
+
 /** Switch the delivery target. `hub` needs a running hub (hub.json). */
 function setTransport(kind, reason = "manual") {
   if (kind === "hub") {
@@ -151,26 +171,16 @@ function setTransport(kind, reason = "manual") {
       return { ok: false, error: "hub-not-running" };
     }
     const endpoint = "http://" + (hub.host || "127.0.0.1") + ":" + hub.port;
-    const payload = JSON.stringify({ endpoint }, null, 2);
-    let written = null;
-    for (const file of globalConfigFiles()) {
-      try {
-        fs.mkdirSync(path.dirname(file), { recursive: true });
-        fs.writeFileSync(file, payload, "utf8");
-        written = file;
-      } catch (error) {
-        log("transport write failed", file, error && error.code);
-      }
-    }
+    const written = updateGlobalConfig((config) => ({ ...config, endpoint }));
     if (!written) return { ok: false, error: "write-failed" };
     log("transport switched", { kind: "hub", endpoint, file: written, reason });
     return { ok: true, kind: "hub" };
   }
-  for (const file of globalConfigFiles()) {
-    try {
-      fs.unlinkSync(file);
-    } catch {}
-  }
+  updateGlobalConfig((config) => {
+    const next = { ...config };
+    delete next.endpoint;
+    return next;
+  });
   log("transport switched", { kind: "dsh", reason });
   return { ok: true, kind: "dsh" };
 }
@@ -229,6 +239,7 @@ async function settingsState() {
       ? { running: true, port: hub.port, endpoint: hubEndpoint(hub), embedded: hub.embedded }
       : { running: false, port: 0, endpoint: "", embedded: false },
     autostart: Boolean(app.getLoginItemSettings().openAtLogin),
+    autoHub: readAutoHub(),
     hotkeys: { ...activeKeys },
     paths: { globalConfig: globalConfigFiles()[0], hubConfig: path.join(agentPingHome(), "hub.json") }
   };
@@ -300,6 +311,10 @@ ipcMain.handle("settings:set-autostart", (event, value) => {
   } catch {
     return false;
   }
+});
+ipcMain.handle("settings:set-autohub", (event, value) => {
+  updateGlobalConfig((config) => ({ ...config, autoHub: Boolean(value) }));
+  return readAutoHub();
 });
 ipcMain.handle("settings:copy", (event, text) => {
   try {
@@ -817,6 +832,12 @@ app.whenReady().then(async () => {
     const requested = targetArg.slice("--target=".length);
     const result = setTransport(requested === "hub" ? "hub" : "dsh", "cli");
     log("target-switch", { requested, ok: result.ok, transport: (readTransport() || {}).kind || "none" });
+  }
+  const headlessTest = process.argv.includes("--capture-test") || process.argv.includes("--send-test") || process.argv.includes("--settings-shot");
+  if (!headlessTest && !startHubFlag && !targetArg && readAutoHub()) {
+    const result = await startHubFromApp();
+    if (result.ok) setTransport("hub", "auto");
+    log("auto-hub", { ok: result.ok, port: result.hub && result.hub.port, error: result.error });
   }
   if (process.argv.includes("--capture-test")) {
     const display = screen.getPrimaryDisplay();
