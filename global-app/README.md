@@ -146,7 +146,11 @@ The hub is imported from `hub.mjs` (synced from `standalone/hub.js` by
 npm run package
 ```
 
-Output: `release\AgentPing-win32-x64\` with `AgentPingCore.exe`, `AgentPing.cmd` and `AgentPing.lnk`. Use the cmd or shortcut, not the core executable.
+`npm run package` goes through `scripts/package.mjs`, which uses a cached Electron
+zip (`%LOCALAPPDATA%\electron\Cache`) when one exists, so packaging does not need
+GitHub access. Output: `release\AgentPing-win32-x64\` with `AgentPingCore.exe`,
+`AgentPing.cmd` and `AgentPing.lnk`. Use the cmd or shortcut, not the core
+executable.
 
 ## Files
 
