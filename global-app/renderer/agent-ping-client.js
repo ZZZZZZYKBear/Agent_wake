@@ -1290,7 +1290,7 @@ window.__ModuleLoader__.load({
 /* ---- feed ---- */
 .ap-feed {
 	position: fixed;
-	left: 14px;
+	right: 14px;
 	bottom: 14px;
 	z-index: 2;
 	pointer-events: auto;
@@ -1320,7 +1320,7 @@ window.__ModuleLoader__.load({
 .ap-feed-count { color: var(--ap-gold); }
 .ap-feed-list {
 	position: absolute;
-	left: 0;
+	right: 0;
 	bottom: 32px;
 	width: 248px;
 	max-height: 270px;
@@ -1337,6 +1337,27 @@ window.__ModuleLoader__.load({
 	transition: opacity .12s ease, transform .12s ease;
 }
 .ap-feed:hover .ap-feed-list, .ap-feed.is-open .ap-feed-list { opacity: 1; transform: none; pointer-events: auto; }
+.ap-feed-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 10px;
+	padding: 3px 5px 6px;
+	font-size: 9px;
+	letter-spacing: .12em;
+	color: rgba(240, 230, 210, .38);
+}
+.ap-feed-clear {
+	flex: 0 0 auto;
+	padding: 2px 8px;
+	border: 1px solid rgba(200, 170, 110, .22);
+	border-radius: 999px;
+	font-size: 9px;
+	letter-spacing: .04em;
+	color: rgba(240, 230, 210, .5);
+	transition: color .12s ease, border-color .12s ease, background .12s ease;
+}
+.ap-feed-clear:hover { color: var(--ap-gold-bright); border-color: rgba(200, 170, 110, .5); background: rgba(200, 170, 110, .08); }
 .ap-feed-row {
 	display: flex;
 	align-items: center;
@@ -3033,6 +3054,15 @@ window.__ModuleLoader__.load({
 				saveSettings(this.settings);
 			}
 
+			clearFeed() {
+				this.recent = [];
+				this.settings.feed = [];
+				this.save();
+				this.renderFeed();
+				this.updateFeedVisibility();
+				this.toast("信号记录已清除");
+			}
+
 			addRecent(entry) {
 				this.recent.unshift({
 					id: uid(),
@@ -3063,16 +3093,26 @@ window.__ModuleLoader__.load({
 						);
 					}).join("")
 					: '<div class="ap-feed-empty">还没有信号记录</div>';
+				const head = items.length
+					? '<div class="ap-feed-head"><span>最近信号</span><button class="ap-feed-clear" type="button" data-ap-feed-clear>清除</button></div>'
+					: "";
 				this.el.feed.innerHTML =
 					'<button class="ap-feed-toggle" type="button" data-ap-feed-toggle>' +
 					'<span class="ap-feed-dot"></span><span>信号</span><span class="ap-feed-count">' + this.recent.length + "</span>" +
 					"</button>" +
-					'<div class="ap-feed-list">' + rows + "</div>";
+					'<div class="ap-feed-list">' + head + rows + "</div>";
 				const toggle = this.el.feed.querySelector("[data-ap-feed-toggle]");
 				if (toggle) {
 					toggle.addEventListener("click", (event) => {
 						event.stopPropagation();
 						this.el.feed.classList.toggle("is-open");
+					});
+				}
+				const clear = this.el.feed.querySelector("[data-ap-feed-clear]");
+				if (clear) {
+					clear.addEventListener("click", (event) => {
+						event.stopPropagation();
+						this.clearFeed();
 					});
 				}
 				this.el.feed.querySelectorAll("[data-ap-feed-id]").forEach((button) => {

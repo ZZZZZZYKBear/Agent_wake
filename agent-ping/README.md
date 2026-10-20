@@ -49,7 +49,7 @@ Open the wheel and click the small **设置** button in the hub, or press `Shift
 
 Each of the eight slots has an emoji, a name and a command. The command is sent verbatim to the agent (with optional target context). Changes save to `localStorage` immediately. `恢复默认表情` restores the eight defaults.
 
-The signal feed in the bottom-left corner keeps the last 20 signals and lets you re-send one. It can be hidden from settings.
+The signal feed in the bottom-right corner keeps the last 20 signals and lets you re-send one. Expanding it shows a **清除** button that clears the whole list; it can be hidden from settings.
 
 ## Prompt shape
 
