@@ -2322,7 +2322,7 @@ window.__ModuleLoader__.load({
 			}
 
 			onTargetPointerDown(event) {
-				if (!this.askState || this.globalMode) return;
+				if (!this.askState) return;
 				if (event.button !== 0) return;
 				const box = this.el.target;
 				if (!box || !box.classList.contains("is-visible")) return;
@@ -2397,6 +2397,10 @@ window.__ModuleLoader__.load({
 					width: Math.max(12, rect.width - 10),
 					height: Math.max(12, rect.height - 10)
 				};
+				if (this.globalMode) {
+					this.applyDesktopTarget(area).catch(() => {});
+					return;
+				}
 				const x = Math.round(area.left + area.width / 2);
 				const y = Math.round(area.top + area.height / 2);
 				const captured = captureTarget(x, y) || {};
@@ -2415,6 +2419,53 @@ window.__ModuleLoader__.load({
 				this.refreshAskTarget(target);
 			}
 
+			/**
+			 * Desktop marks live in screen coordinates, so moving/resizing the box
+			 * also needs a fresh screenshot and a rebuilt selector/context block.
+			 */
+			async applyDesktopTarget(area) {
+				const previous = this.askState && this.askState.target;
+				if (!previous) return;
+				const centerX = Math.round(area.left + area.width / 2);
+				const centerY = Math.round(area.top + area.height / 2);
+				const originX = (Number.isFinite(previous.screenX) ? previous.screenX : previous.x) - previous.x;
+				const originY = (Number.isFinite(previous.screenY) ? previous.screenY : previous.y) - previous.y;
+				const screenX = Math.round(originX + centerX);
+				const screenY = Math.round(originY + centerY);
+				let shot = null;
+				try {
+					if (window.agentPingHost && typeof window.agentPingHost.captureTarget === "function") {
+						shot = await window.agentPingHost.captureTarget({ x: screenX, y: screenY });
+					}
+				} catch {}
+				const displayLabel = previous.displayLabel
+					|| String(previous.label || "").replace(/^桌面标记 · /, "")
+					|| "桌面";
+				const path = (shot && shot.path) || previous.screenshotPath || "";
+				const text = [
+					path ? `屏幕截图：${path}` : "屏幕截图：捕获失败（仍可按坐标和用户问题处理）",
+					"截图是标记点周围约 430×300 的桌面区域。",
+					`全局屏幕坐标：(${screenX}, ${screenY})`
+				].join("\n");
+				const target = {
+					...previous,
+					x: centerX,
+					y: centerY,
+					screenX,
+					screenY,
+					selector: `桌面 / ${displayLabel} / (${screenX}, ${screenY})`,
+					label: `桌面标记 · ${displayLabel}`,
+					text,
+					rect: area,
+					displayLabel,
+					screenshotPath: path,
+					preview: shot && shot.dataUrl ? shot.dataUrl : previous.preview || ""
+				};
+				this.askState.target = target;
+				this.showTarget(target, this.askState.item && this.askState.item.color);
+				this.refreshAskTarget(target);
+			}
+
 			refreshAskTarget(target) {
 				if (!this.el.ask || !target) return;
 				const label = this.el.ask.querySelector(".ap-ask-target-label");
@@ -2426,6 +2477,8 @@ window.__ModuleLoader__.load({
 						: "页面空白处";
 				if (label) label.textContent = target.label || "页面空白处";
 				if (text) text.textContent = contextLine;
+				const previewImage = this.el.ask.querySelector(".ap-ask-preview img");
+				if (previewImage && target.preview) previewImage.src = target.preview;
 			}
 
 			closeWheel(silent) {

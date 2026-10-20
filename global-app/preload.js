@@ -22,6 +22,9 @@ contextBridge.exposeInMainWorld("agentPingHost", {
   sendSignal(payload) {
     return ipcRenderer.invoke("send-signal", payload);
   },
+  captureTarget(point) {
+    return ipcRenderer.invoke("capture-target", point);
+  },
   closeOverlay() {
     ipcRenderer.send("close-overlay-request");
   }

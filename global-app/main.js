@@ -498,6 +498,8 @@ async function buildTarget(display, point) {
     screenY: point.y,
     selector: `桌面 / ${displayLabel} / (${point.x}, ${point.y})`,
     label: `桌面标记 · ${displayLabel}`,
+    displayLabel,
+    screenshotPath: shot ? shot.path : "",
     text: lines.join("\n"),
     tag: "desktop",
     rect: { left: localX - 72, top: localY - 54, width: 144, height: 108 },
@@ -809,6 +811,16 @@ ipcMain.handle("send-signal", async (event, payload) => {
   }
   enqueue(payload);
   return { ok: true, queued: true };
+});
+
+// Re-capture the desktop around a moved/resized mark in the ask composer.
+ipcMain.handle("capture-target", async (event, point) => {
+  const x = Math.round(Number(point && point.x));
+  const y = Math.round(Number(point && point.y));
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+  const display = screen.getDisplayNearestPoint({ x, y });
+  const shot = await captureTarget(display, { x, y }, { log }).catch(() => null);
+  return shot || null;
 });
 
 app.whenReady().then(async () => {

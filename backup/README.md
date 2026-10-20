@@ -16,8 +16,10 @@ D:\Mydocument\projects\agent-ping-stable\plugin
 ```
 
 这样在 `agent_wake` 仓库里继续开发（改 `standalone/`、`global-app/`）**不会**改变你正在用的
-DSH 插件。稳定副本里的 `lib/client.js` 与归档时的仓库版本 sha256 一致
-（`9f05923b…085ee0`）。
+DSH 插件。
+
+2026-10-20 晚，稳定副本的 `lib/client.js` 曾被有意同步一次「提问选择框可拖动/缩放」修复，
+当前 sha256 为 `d8d085a9…c45111`，与仓库版本一致。此后除非再次明确要修插件，不再从仓库覆盖。
 
 注意：切换链接后，正在运行的 DSH 进程里 Host 半侧仍是切换前加载的同一份代码（内容相同）；
 **重启一次 DSH** 后才会完全从稳定副本加载。重启前请不要改动 `agent_wake/agent-ping/`，
