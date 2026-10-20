@@ -14,7 +14,7 @@ The first sector of the ping wheel is **提问**. It closes the wheel and opens 
 
 While the composer is open, the purple target box is adjustable: drag its body to move the mark, drag a corner handle to resize it. On release the element under the box center is captured again, so the composer's label and the prompt follow the new area. The marked area stays crisp while everything around it is dimmed and frosted, so the context you are asking about is never blurred.
 
-When more than one conversation exists, firing any signal (or choosing 提问) first opens a **session picker**: pick the conversation that should receive the instruction. The current conversation is listed first and marked; picking another one sends the prompt there through `sessions.retain()` without switching the view. A single conversation skips the picker.
+When more than one conversation exists, firing any signal (or choosing 提问) first opens a **session picker**: pick the conversation that should receive the instruction. The current conversation is listed first and marked; picking another one sends the prompt there through `sessions.retain()` without switching the view. A single conversation skips the picker. The picker can be dragged by its title bar, and it opens beside the marked box (and the question composer likewise avoids covering it when there is room).
 
 Everything runs inside the DSH client: the plugin binds to the active conversation through `conversation.input.dock`, then calls the session's `beginSubmission()` / `prompt()` methods. The in-page wheel needs no external server.
 

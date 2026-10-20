@@ -577,20 +577,22 @@ window.__ModuleLoader__.load({
 	position: fixed;
 	inset: 0;
 	z-index: 5;
-	display: flex;
-	align-items: center;
-	justify-content: center;
 	opacity: 0;
 	pointer-events: none;
 	transition: opacity .15s ease;
 }
 .ap-root.is-picker .ap-picker { opacity: 1; pointer-events: auto; }
 .ap-picker-card {
+	position: absolute;
+	left: 0;
+	top: 0;
 	width: min(420px, calc(100vw - 32px));
 	max-height: min(74vh, 560px);
 	display: flex;
 	flex-direction: column;
 }
+.ap-picker-card .ap-card-head { cursor: grab; }
+.ap-picker-card.is-dragging .ap-card-head { cursor: grabbing; }
 .ap-picker-list {
 	display: flex;
 	flex-direction: column;
@@ -1512,6 +1514,7 @@ window.__ModuleLoader__.load({
 				this.wheel = null;
 				this.askState = null;
 				this.pickerState = null;
+				this.pickerPos = null;
 				this.targetDrag = null;
 				this.settingsOpen = false;
 				this.pending = null;
@@ -2510,7 +2513,7 @@ window.__ModuleLoader__.load({
 				}
 				if (mode === "ping" && item.ask) {
 					this.playSound("question");
-					this.chooseSession((sessionId) => this.openAsk(target, item, sessionId));
+					this.chooseSession(target, (sessionId) => this.openAsk(target, item, sessionId));
 					return;
 				}
 				const prompt =
@@ -2518,7 +2521,7 @@ window.__ModuleLoader__.load({
 						? formatEmotePrompt(item.emote, target, this.settings.includeContext)
 						: formatSignalPrompt(item, target, this.settings.includeContext);
 				this.playSound("send");
-				this.chooseSession((sessionId) => {
+				this.chooseSession(target, (sessionId) => {
 					this.ripple(target, item);
 					this.sendPrompt(prompt, item, target, sessionId);
 				});
@@ -2561,16 +2564,16 @@ window.__ModuleLoader__.load({
 				return null;
 			}
 
-			chooseSession(onPick) {
+			chooseSession(anchor, onPick) {
 				const options = this.globalMode ? [] : this.sessionOptions();
 				if (options.length <= 1) {
 					onPick(this.sessionId);
 					return;
 				}
-				this.openSessionPicker(options, onPick);
+				this.openSessionPicker(options, onPick, anchor);
 			}
 
-			openSessionPicker(options, onPick) {
+			openSessionPicker(options, onPick, anchor) {
 				this.hideToast();
 				this.pickerState = { onPick };
 				this.el.picker.innerHTML = `
@@ -2589,10 +2592,22 @@ window.__ModuleLoader__.load({
 		</button>`).join("")}
 	</div>
 	<div class="ap-ask-foot">
-		<span class="ap-ask-hint">Esc 取消 · 选中后立即发送</span>
+		<span class="ap-ask-hint">拖动标题栏可移动 · Esc 取消 · 选中后立即发送</span>
 	</div>
 </div>`;
 				this.setRootState("picker");
+				const card = this.el.picker.querySelector(".ap-picker-card");
+				if (card) {
+					const rect = card.getBoundingClientRect();
+					const avoid = this.pickerPos ? null : (anchor && anchor.rect ? anchor.rect : null);
+					const preferred = this.pickerPos
+						? { x: this.pickerPos.x, y: this.pickerPos.y }
+						: { x: (innerWidth - rect.width) / 2, y: (innerHeight - rect.height) / 2 };
+					const spot = this.placeCard(rect.width, rect.height, avoid, preferred);
+					card.style.left = spot.left + "px";
+					card.style.top = spot.top + "px";
+					this.bindPickerDrag(card);
+				}
 				this.el.picker.querySelectorAll("[data-ap-picker-id]").forEach((row) => {
 					row.addEventListener("click", () => {
 						const id = row.getAttribute("data-ap-picker-id");
@@ -2605,6 +2620,76 @@ window.__ModuleLoader__.load({
 				if (close) close.addEventListener("click", () => this.closePicker());
 				const first = this.el.picker.querySelector(".ap-picker-row");
 				if (first) setTimeout(() => { try { first.focus({ preventScroll: true }); } catch {} }, 20);
+			}
+
+			bindPickerDrag(card) {
+				const head = card.querySelector(".ap-card-head");
+				if (!head) return;
+				head.addEventListener("pointerdown", (event) => {
+					if (event.button !== 0) return;
+					if (event.target && event.target.closest && event.target.closest("[data-ap-picker-close]")) return;
+					const rect = card.getBoundingClientRect();
+					const drag = { startX: event.clientX, startY: event.clientY, left: rect.left, top: rect.top, width: rect.width, height: rect.height };
+					const move = (moveEvent) => {
+						const left = Math.max(4, Math.min(innerWidth - drag.width - 4, drag.left + moveEvent.clientX - drag.startX));
+						const top = Math.max(4, Math.min(innerHeight - drag.height - 4, drag.top + moveEvent.clientY - drag.startY));
+						card.style.left = left + "px";
+						card.style.top = top + "px";
+						this.pickerPos = { x: left, y: top };
+					};
+					const up = () => {
+						card.classList.remove("is-dragging");
+						card.removeEventListener("pointermove", move);
+						card.removeEventListener("pointerup", up);
+						try { card.releasePointerCapture(event.pointerId); } catch {}
+					};
+					card.classList.add("is-dragging");
+					try { card.setPointerCapture(event.pointerId); } catch {}
+					card.addEventListener("pointermove", move);
+					card.addEventListener("pointerup", up);
+					event.preventDefault();
+					event.stopPropagation();
+				});
+			}
+
+			/** Clamp a card inside the viewport, preferring a spot outside `avoid`. */
+			placeCard(width, height, avoid, preferred) {
+				const margin = 12;
+				const gap = 16;
+				const clampX = (x) => Math.max(margin, Math.min(innerWidth - width - margin, x));
+				const clampY = (y) => Math.max(margin, Math.min(innerHeight - height - margin, y));
+				const overlaps = (left, top) => Boolean(
+					avoid
+					&& left < avoid.left + avoid.width
+					&& left + width > avoid.left
+					&& top < avoid.top + avoid.height
+					&& top + height > avoid.top
+				);
+				const attempt = (x, y) => {
+					const left = clampX(x);
+					const top = clampY(y);
+					return overlaps(left, top) ? null : { left, top };
+				};
+				if (preferred) {
+					const spot = attempt(preferred.x, preferred.y);
+					if (spot) return spot;
+				}
+				if (avoid) {
+					const candidates = [
+						{ x: avoid.left + avoid.width + gap, y: avoid.top },
+						{ x: avoid.left - width - gap, y: avoid.top },
+						{ x: avoid.left, y: avoid.top + avoid.height + gap },
+						{ x: avoid.left, y: avoid.top - height - gap }
+					];
+					for (const candidate of candidates) {
+						const spot = attempt(candidate.x, candidate.y);
+						if (spot) return spot;
+					}
+				}
+				return {
+					left: clampX(preferred ? preferred.x : (innerWidth - width) / 2),
+					top: clampY(preferred ? preferred.y : (innerHeight - height) / 2)
+				};
 			}
 
 			closePicker() {
@@ -2792,20 +2877,13 @@ window.__ModuleLoader__.load({
 				const target = this.askState.target;
 				const point = target && Number.isFinite(target.x) ? target : this.lastPointer;
 				const rect = card.getBoundingClientRect();
-				if (this.globalMode) {
-					this.el.ask.style.left = Math.max(12, (innerWidth - rect.width) / 2) + "px";
-					this.el.ask.style.top = Math.max(12, (innerHeight - rect.height) / 2) + "px";
-					return;
-				}
-				const gap = 24;
-				let left = point.x + gap;
-				let top = point.y - 42;
-				if (left + rect.width > innerWidth - 12) left = point.x - rect.width - gap;
-				if (left < 12) left = 12;
-				if (top + rect.height > innerHeight - 12) top = innerHeight - rect.height - 12;
-				if (top < 12) top = 12;
-				this.el.ask.style.left = left + "px";
-				this.el.ask.style.top = top + "px";
+				const avoid = target && target.rect ? target.rect : null;
+				const preferred = this.globalMode
+					? { x: Math.max(12, (innerWidth - rect.width) / 2), y: Math.max(12, (innerHeight - rect.height) / 2) }
+					: { x: point.x + 24, y: point.y - 42 };
+				const spot = this.placeCard(rect.width, rect.height, avoid, preferred);
+				this.el.ask.style.left = spot.left + "px";
+				this.el.ask.style.top = spot.top + "px";
 			}
 
 			submitAsk() {
