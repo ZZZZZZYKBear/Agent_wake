@@ -2513,7 +2513,7 @@ window.__ModuleLoader__.load({
 				}
 				if (mode === "ping" && item.ask) {
 					this.playSound("question");
-					this.chooseSession(target, (sessionId) => this.openAsk(target, item, sessionId));
+					this.chooseSession(target, item.color, (sessionId) => this.openAsk(target, item, sessionId), true);
 					return;
 				}
 				const prompt =
@@ -2521,7 +2521,7 @@ window.__ModuleLoader__.load({
 						? formatEmotePrompt(item.emote, target, this.settings.includeContext)
 						: formatSignalPrompt(item, target, this.settings.includeContext);
 				this.playSound("send");
-				this.chooseSession(target, (sessionId) => {
+				this.chooseSession(target, item.color, (sessionId) => {
 					this.ripple(target, item);
 					this.sendPrompt(prompt, item, target, sessionId);
 				});
@@ -2564,18 +2564,19 @@ window.__ModuleLoader__.load({
 				return null;
 			}
 
-			chooseSession(anchor, onPick) {
+			chooseSession(anchor, color, onPick, keepTarget = false) {
 				const options = this.globalMode ? [] : this.sessionOptions();
 				if (options.length <= 1) {
 					onPick(this.sessionId);
 					return;
 				}
-				this.openSessionPicker(options, onPick, anchor);
+				this.openSessionPicker(options, onPick, anchor, color, keepTarget);
 			}
 
-			openSessionPicker(options, onPick, anchor) {
+			openSessionPicker(options, onPick, anchor, color, keepTarget = false) {
 				this.hideToast();
-				this.pickerState = { onPick };
+				this.pickerState = { onPick, keepTarget };
+				if (anchor && anchor.rect) this.showTarget(anchor, color);
 				this.el.picker.innerHTML = `
 <div class="ap-card ap-picker-card">
 	<div class="ap-card-head">
@@ -2612,7 +2613,8 @@ window.__ModuleLoader__.load({
 					row.addEventListener("click", () => {
 						const id = row.getAttribute("data-ap-picker-id");
 						const pick = this.pickerState && this.pickerState.onPick;
-						this.closePicker();
+						const keep = Boolean(this.pickerState && this.pickerState.keepTarget);
+						this.closePicker(keep);
 						if (pick) pick(id);
 					});
 				});
@@ -2692,11 +2694,14 @@ window.__ModuleLoader__.load({
 				};
 			}
 
-			closePicker() {
+			closePicker(keepTarget = false) {
 				const state = this.pickerState;
 				this.pickerState = null;
 				if (this.el.picker) this.el.picker.innerHTML = "";
-				if (!this.wheel && !this.askState && !this.settingsOpen) this.setRootState(null);
+				if (!this.wheel && !this.askState && !this.settingsOpen) {
+					this.setRootState(null);
+					if (!keepTarget) this.hideTarget();
+				}
 				return state;
 			}
 
