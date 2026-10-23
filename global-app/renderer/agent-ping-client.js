@@ -1086,6 +1086,19 @@ window.__ModuleLoader__.load({
 	overflow: hidden;
 	text-overflow: ellipsis;
 }
+.ap-ask-session-select {
+	max-width: 240px;
+	margin-left: 4px;
+	padding: 2px 6px;
+	border: 1px solid rgba(200, 170, 110, .3);
+	border-radius: 6px;
+	background: rgba(3, 10, 16, .92);
+	color: var(--ap-ink);
+	font: inherit;
+	font-size: 10px;
+	vertical-align: middle;
+}
+.ap-ask-session-select:disabled { opacity: .55; }
 .ap-ask-foot {
 	display: flex;
 	align-items: center;
@@ -1672,6 +1685,7 @@ window.__ModuleLoader__.load({
 				this.sessionId = sessionId;
 				this.updateFeedVisibility();
 				this.flushExternal();
+				this.publishSessions();
 			}
 
 			startBridge() {
@@ -1683,6 +1697,10 @@ window.__ModuleLoader__.load({
 
 			stopBridge() {
 				this.bridgeEpoch += 1;
+				if (this.sessionTimer) {
+					clearInterval(this.sessionTimer);
+					this.sessionTimer = null;
+				}
 				if (this.focusTimer) {
 					clearInterval(this.focusTimer);
 					this.focusTimer = null;
@@ -1735,6 +1753,10 @@ window.__ModuleLoader__.load({
 					return;
 				}
 				this.bridgePort = port;
+				this.publishSessions();
+				if (!this.sessionTimer) {
+					this.sessionTimer = setInterval(() => this.publishSessions(), 8000);
+				}
 				this.reportFocus(this.pageFocused());
 				try {
 					const source = new EventSource("http://127.0.0.1:" + port + "/events");
@@ -1776,14 +1798,14 @@ window.__ModuleLoader__.load({
 					return;
 				}
 				this.toast("收到全局信号 · " + item.label);
-				this.sendPrompt(payload.prompt, item, target);
+				this.sendPrompt(payload.prompt, item, target, payload.sessionId || this.sessionId);
 			}
 
 			flushExternal() {
 				if (!this.sessionId || this.externalQueue.length === 0) return;
 				const queued = this.externalQueue.splice(0);
 				for (const entry of queued) {
-					this.sendPrompt(entry.payload.prompt, entry.item, entry.target);
+					this.sendPrompt(entry.payload.prompt, entry.item, entry.target, entry.payload.sessionId || this.sessionId);
 				}
 			}
 
@@ -2513,7 +2535,7 @@ window.__ModuleLoader__.load({
 				}
 				if (mode === "ping" && item.ask) {
 					this.playSound("question");
-					this.chooseSession(target, item.color, (sessionId) => this.openAsk(target, item, sessionId), true);
+					this.openAsk(target, item);
 					return;
 				}
 				const prompt =
@@ -2562,6 +2584,30 @@ window.__ModuleLoader__.load({
 					if (list && typeof list.getSnapshot === "function") return list.getSnapshot();
 				} catch {}
 				return null;
+			}
+
+			/** Publish titles to the bridge so the global overlay can offer a picker. */
+			publishSessions() {
+				if (this.globalMode || !this.bridgePort) return;
+				let rows = [];
+				try {
+					rows = this.sessionOptions().map((row) => ({
+						id: row.id,
+						title: row.title,
+						running: row.running,
+						current: row.current,
+						updatedAt: row.updatedAt
+					}));
+				} catch {}
+				if (rows.length === 0) return;
+				try {
+					fetch("http://127.0.0.1:" + this.bridgePort + "/sessions", {
+						method: "POST",
+						headers: { "content-type": "application/json" },
+						body: JSON.stringify({ sessions: rows }),
+						keepalive: true
+					}).catch(() => {});
+				} catch {}
 			}
 
 			chooseSession(anchor, color, onPick, keepTarget = false) {
@@ -2717,7 +2763,40 @@ window.__ModuleLoader__.load({
 						? { selector: target.selector, label: target.label, x: target.x, y: target.y }
 						: null
 				};
-				const targetId = sessionId || this.sessionId;
+				const targetId = this.globalMode ? (sessionId || "") : (sessionId || this.sessionId);
+				if (this.globalMode) {
+					const host = typeof window !== "undefined" ? window.agentPingHost : null;
+					if (!host || typeof host.sendSignal !== "function") {
+						this.addRecent({ ...meta, sent: false });
+						this.toast("发送失败：全局宿主不可用", true);
+						return;
+					}
+					try {
+						const result = await host.sendSignal({
+							id: uid(),
+							label: item.label || "全局信号",
+							emoji: item.emoji || "🖥️",
+							icon: item.icon || "flag",
+							color: item.color || "#62b6ff",
+							prompt,
+							target,
+							source: "global",
+							sessionId: targetId
+						});
+						if (result && result.ok) {
+							this.addRecent({ ...meta, sent: true });
+							this.toast(result.queued ? "信号已排队 · 等待 DSH" : "信号已发送 · " + item.label);
+							this.playSound("sent");
+							return result;
+						}
+						throw new Error((result && (result.error || result.message)) || "无法连接 DSH 桥接");
+					} catch (error) {
+						this.addRecent({ ...meta, sent: false });
+						this.toast("发送失败：" + (error && error.message ? error.message : "未知错误"), true);
+						this.playSound("error");
+						return;
+					}
+				}
 				if (!targetId) {
 					this.addRecent({ ...meta, sent: false });
 					this.toast("已标记位置 · 没有找到活动会话");
@@ -2795,9 +2874,15 @@ window.__ModuleLoader__.load({
 				this.hideToast();
 				this.closeWheel(true);
 				this.closeSettings();
-				const askSessionId = sessionId || this.sessionId;
+				const askSessionId = this.globalMode ? "" : (sessionId || this.sessionId);
 				const askSession = this.sessionOptions().find((row) => row.id === askSessionId);
 				this.askState = { target, item: item || PINGS[0], sessionId: askSessionId };
+				const quickSessions = this.globalMode ? [] : this.sessionOptions();
+				const sessionLine = this.globalMode
+					? '<label class="ap-ask-session">发送到：<select class="ap-ask-session-select" data-ap-ask-session-select><option value="">当前会话</option></select></label>'
+					: `<label class="ap-ask-session">发送到：<select class="ap-ask-session-select" data-ap-ask-session-select>${quickSessions
+						.map((row) => `<option value="${esc(row.id)}"${row.current ? " selected" : ""}>${esc(row.title)}${row.current ? "（当前）" : ""}</option>`)
+						.join("")}</select></label>`;
 				const ctx = target || {};
 				const contextLine = ctx.selector && ctx.selector !== "页面空白处"
 					? ctx.selector
@@ -2829,7 +2914,7 @@ window.__ModuleLoader__.load({
 		<button class="ap-chip" type="button" data-ap-chip="解释这一段">解释这一段</button>
 		<button class="ap-chip" type="button" data-ap-chip="继续从这里工作">继续从这里工作</button>
 	</div>
-	<div class="ap-ask-session">发送到：${esc(askSession ? askSession.title : "当前会话")}</div>
+	${sessionLine}
 	<div class="ap-ask-foot">
 		<span class="ap-ask-hint">拖动紫框或四角可调整标记 · Ctrl + Enter 发送 · Esc 取消</span>
 		<button class="ap-send" type="button" data-ap-ask-send>
@@ -2850,6 +2935,12 @@ window.__ModuleLoader__.load({
 				}
 				if (close) close.addEventListener("click", () => this.closeAsk());
 				if (send) send.addEventListener("click", () => this.submitAsk());
+				const sessionSelect = this.el.ask.querySelector("[data-ap-ask-session-select]");
+				if (sessionSelect && !this.globalMode) {
+					sessionSelect.addEventListener("change", () => {
+						if (this.askState) this.askState.sessionId = sessionSelect.value || this.sessionId;
+					});
+				}
 				if (input) {
 					input.addEventListener("keydown", (event) => {
 						if (event.key === "Escape") {
@@ -2872,6 +2963,37 @@ window.__ModuleLoader__.load({
 						input.focus({ preventScroll: true });
 						this.positionAsk();
 					});
+				});
+				if (this.globalMode) this.loadGlobalSessions();
+			}
+
+			/** Fill the global ask composer's session selector from the bridge list. */
+			async loadGlobalSessions() {
+				const select = this.el.ask && this.el.ask.querySelector("[data-ap-ask-session-select]");
+				if (!select) return;
+				let sessions = [];
+				try {
+					if (window.agentPingHost && typeof window.agentPingHost.listSessions === "function") {
+						const result = await window.agentPingHost.listSessions();
+						if (result && result.ok && Array.isArray(result.sessions)) sessions = result.sessions;
+					}
+				} catch {}
+				if (!this.askState || !document.body.contains(select)) return;
+				if (sessions.length === 0) {
+					select.disabled = true;
+					select.title = "没有获取到 DSH 会话列表";
+					return;
+				}
+				select.innerHTML = sessions
+					.map((row) => `<option value="${esc(row.id)}">${esc(row.title || row.id)}${row.current ? "（当前）" : ""}</option>`)
+					.join("");
+				const current = sessions.find((row) => row.current);
+				if (current) {
+					select.value = current.id;
+					if (this.askState) this.askState.sessionId = current.id;
+				}
+				select.addEventListener("change", () => {
+					if (this.askState) this.askState.sessionId = select.value || "";
 				});
 			}
 

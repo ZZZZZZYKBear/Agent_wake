@@ -2535,7 +2535,7 @@ window.__ModuleLoader__.load({
 				}
 				if (mode === "ping" && item.ask) {
 					this.playSound("question");
-					this.chooseSession(target, item.color, (sessionId) => this.openAsk(target, item, sessionId), true);
+					this.openAsk(target, item);
 					return;
 				}
 				const prompt =
@@ -2877,9 +2877,12 @@ window.__ModuleLoader__.load({
 				const askSessionId = this.globalMode ? "" : (sessionId || this.sessionId);
 				const askSession = this.sessionOptions().find((row) => row.id === askSessionId);
 				this.askState = { target, item: item || PINGS[0], sessionId: askSessionId };
+				const quickSessions = this.globalMode ? [] : this.sessionOptions();
 				const sessionLine = this.globalMode
 					? '<label class="ap-ask-session">发送到：<select class="ap-ask-session-select" data-ap-ask-session-select><option value="">当前会话</option></select></label>'
-					: `<div class="ap-ask-session">发送到：${esc(askSession ? askSession.title : "当前会话")}</div>`;
+					: `<label class="ap-ask-session">发送到：<select class="ap-ask-session-select" data-ap-ask-session-select>${quickSessions
+						.map((row) => `<option value="${esc(row.id)}"${row.current ? " selected" : ""}>${esc(row.title)}${row.current ? "（当前）" : ""}</option>`)
+						.join("")}</select></label>`;
 				const ctx = target || {};
 				const contextLine = ctx.selector && ctx.selector !== "页面空白处"
 					? ctx.selector
@@ -2932,6 +2935,12 @@ window.__ModuleLoader__.load({
 				}
 				if (close) close.addEventListener("click", () => this.closeAsk());
 				if (send) send.addEventListener("click", () => this.submitAsk());
+				const sessionSelect = this.el.ask.querySelector("[data-ap-ask-session-select]");
+				if (sessionSelect && !this.globalMode) {
+					sessionSelect.addEventListener("change", () => {
+						if (this.askState) this.askState.sessionId = sessionSelect.value || this.sessionId;
+					});
+				}
 				if (input) {
 					input.addEventListener("keydown", (event) => {
 						if (event.key === "Escape") {
