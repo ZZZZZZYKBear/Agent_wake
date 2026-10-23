@@ -15,6 +15,7 @@ const path = require("node:path");
 const fs = require("node:fs");
 const os = require("node:os");
 const http = require("node:http");
+const { execFileSync } = require("node:child_process");
 const { pathToFileURL } = require("node:url");
 const { captureTarget } = require("./capture");
 
@@ -162,6 +163,46 @@ function readAutoHub() {
   return Boolean(readGlobalConfig().autoHub);
 }
 
+/** Autostart lives in the user's Startup folder (Electron's login-item API is
+ *  unreliable for this portable build). */
+function startupShortcutPath() {
+  const appData = process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming");
+  return path.join(appData, "Microsoft", "Windows", "Start Menu", "Programs", "Startup", "Agent Ping.lnk");
+}
+
+function readAutostart() {
+  return fs.existsSync(startupShortcutPath());
+}
+
+function writeAutostart(enabled) {
+  const file = startupShortcutPath();
+  if (!enabled) {
+    try {
+      fs.unlinkSync(file);
+    } catch {}
+    return false;
+  }
+  const quote = (value) => String(value).replace(/'/g, "''");
+  const script = [
+    `$s = (New-Object -ComObject WScript.Shell).CreateShortcut('${quote(file)}')`,
+    `$s.TargetPath = '${quote(process.execPath)}'`,
+    "$s.Arguments = '--no-sandbox'",
+    `$s.WorkingDirectory = '${quote(path.dirname(process.execPath))}'`,
+    "$s.Description = 'Agent Ping tray'",
+    "$s.Save()"
+  ].join("; ");
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    execFileSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], {
+      windowsHide: true,
+      timeout: 15000
+    });
+  } catch (error) {
+    log("autostart shortcut failed", error && error.message);
+  }
+  return readAutostart();
+}
+
 /** Switch the delivery target. `hub` needs a running hub (hub.json). */
 function setTransport(kind, reason = "manual") {
   if (kind === "hub") {
@@ -238,7 +279,7 @@ async function settingsState() {
     hub: hub
       ? { running: true, port: hub.port, endpoint: hubEndpoint(hub), embedded: hub.embedded }
       : { running: false, port: 0, endpoint: "", embedded: false },
-    autostart: Boolean(app.getLoginItemSettings().openAtLogin),
+    autostart: readAutostart(),
     autoHub: readAutoHub(),
     hotkeys: { ...activeKeys },
     paths: { globalConfig: globalConfigFiles()[0], hubConfig: path.join(agentPingHome(), "hub.json") }
@@ -300,18 +341,7 @@ ipcMain.handle("settings:stop-hub", async () => {
   await checkHealth().catch(() => {});
   return { ...result, state: await settingsState() };
 });
-ipcMain.handle("settings:set-autostart", (event, value) => {
-  try {
-    app.setLoginItemSettings({
-      openAtLogin: Boolean(value),
-      path: process.execPath,
-      args: ["--no-sandbox"]
-    });
-    return Boolean(app.getLoginItemSettings().openAtLogin);
-  } catch {
-    return false;
-  }
-});
+ipcMain.handle("settings:set-autostart", (event, value) => writeAutostart(Boolean(value)));
 ipcMain.handle("settings:set-autohub", (event, value) => {
   updateGlobalConfig((config) => ({ ...config, autoHub: Boolean(value) }));
   return readAutoHub();
@@ -824,6 +854,18 @@ ipcMain.handle("capture-target", async (event, point) => {
 });
 
 app.whenReady().then(async () => {
+  const autostartArg = process.argv.find((arg) => arg.startsWith("--autostart="));
+  if (autostartArg) {
+    const value = autostartArg.slice("--autostart=".length).trim().toLowerCase();
+    if (value === "status") {
+      log("autostart-status", { enabled: readAutostart(), shortcut: startupShortcutPath() });
+    } else {
+      const enabled = writeAutostart(value !== "off");
+      log("autostart-set", { value, enabled, shortcut: startupShortcutPath() });
+    }
+    app.quit();
+    return;
+  }
   const targetArg = process.argv.find((arg) => arg.startsWith("--target="));
   const startHubFlag = process.argv.includes("--start-hub");
   const settingsFlag = process.argv.includes("--settings");
