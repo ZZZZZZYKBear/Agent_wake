@@ -3,6 +3,21 @@
 `dsh-agent-ping-0.2.0-2026-10-20.zip` 是从本仓库单独整理出来的 **DSH 插件版**快照，
 用于留档和独立分发。它不依赖 `standalone/` 里的独立版代码。
 
+## DSH 配套的全局轮盘（已部署）
+
+`main` 分支上的 0.2.0 全局端（只走 DSH 桥接、没有独立 Hub/设置）已经构建并放在：
+
+```text
+D:\Mydocument\projects\agent-ping-dsh-global\AgentPing-win32-x64\
+```
+
+- 构建方式：`git worktree add ... main`，把稳定副本的 `lib/client.js` 同步到
+  `renderer/agent-ping-client.js`，再用本地 Electron 缓存打包；工作树已删除。
+- 启动方式：`AgentPing.cmd` 或 `AgentPingCore.exe --no-sandbox`。
+- 开机自启：`%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\Agent Ping.lnk`
+  已指向这个 exe，登录后自动在托盘，DSH 打开时它在后台。
+- 它就是 DSH 插件款的全局轮盘：只读 `~/.dsh/agent-ping-bridge.json`，不发独立 Hub。
+
 ## 稳定安装（开发期间照常使用）
 
 DSH 的 `desktop` profile 现在链接到仓库外的冻结副本：
