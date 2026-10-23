@@ -79,6 +79,8 @@ The companion app lives in `../global-app/`. It is a transparent Electron overla
 
 It captures a screenshot around the cursor, saves it to `$DSH_HOME/agent-ping/shots/`, and POSTs the signal to the host bridge. The DSH client receives it over SSE and calls `session.prompt()` on the active session. Signals are queued when DSH or its page is not reachable.
 
+The global question composer lists the DSH conversations: the client publishes titles to the bridge (`POST /sessions`), the overlay reads them (`GET /sessions`) and shows a **发送到** selector. The chosen `sessionId` travels with the signal, and the DSH client routes the prompt there through `sessions.retain()`.
+
 The tray menu shows the actual registered keys and bridge status. Both the global overlay and the in-page combo shortcuts use **move → click** to select, so the gesture is the same in both modes. See `../global-app/README.md`.
 
 ## Notes

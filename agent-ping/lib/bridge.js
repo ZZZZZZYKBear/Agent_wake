@@ -152,6 +152,7 @@ export function startBridge() {
   const webPort = detectWebPort();
   const clients = new Set();
   const queue = [];
+  let sessions = [];
   let dshFocused = false;
   let dshFocusAt = 0;
   let port = 0;
@@ -273,12 +274,41 @@ export function startBridge() {
         color: typeof body.color === "string" ? body.color.slice(0, 32) : "#62b6ff",
         icon: typeof body.icon === "string" ? body.icon.slice(0, 32) : "flag",
         source: "global",
+        sessionId: typeof body.sessionId === "string" ? body.sessionId.slice(0, 80) : "",
         prompt: prompt.slice(0, 20000),
         target: body.target && typeof body.target === "object" ? body.target : null,
         receivedAt: new Date().toISOString()
       };
       const delivered = enqueue(event);
       json(res, 200, { ok: true, delivered, queued: queue.length });
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/sessions") {
+      json(res, 200, { ok: true, sessions });
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/sessions") {
+      let body;
+      try {
+        body = await readJson(req);
+      } catch (error) {
+        json(res, 400, { ok: false, error: error.message });
+        return;
+      }
+      const rows = Array.isArray(body && body.sessions) ? body.sessions : [];
+      sessions = rows
+        .filter((row) => row && typeof row.id === "string" && row.id)
+        .slice(0, 60)
+        .map((row) => ({
+          id: String(row.id).slice(0, 80),
+          title: typeof row.title === "string" ? row.title.slice(0, 160) : "",
+          running: Boolean(row.running),
+          current: Boolean(row.current),
+          updatedAt: Number(row.updatedAt) || 0
+        }));
+      json(res, 200, { ok: true, sessions: sessions.length });
       return;
     }
 
@@ -293,7 +323,7 @@ export function startBridge() {
           "code{color:#c8aa6e}pre{background:#111a24;padding:12px;border-radius:6px}</style>" +
           "<h1>Agent Ping Bridge</h1><p>DSH 本地桥接正在运行。</p>" +
           "<p>端口：<code>" + port + "</code> · DSH 客户端：<code>" + clients.size + "</code> · 排队：<code>" + queue.length + "</code></p>" +
-          "<pre>GET  /health\nGET  /events\nPOST /signal  (X-Agent-Ping-Token)\nPOST /focus   (DSH page focus state)</pre>"
+          "<pre>GET  /health\nGET  /events\nGET  /sessions\nPOST /sessions (DSH page publishes titles)\nPOST /signal  (X-Agent-Ping-Token)\nPOST /focus   (DSH page focus state)</pre>"
       );
       return;
     }
