@@ -117,16 +117,26 @@
 	// The OS cursor and the browser's client coordinates can disagree under DPI
 	// scaling. Open the wheel from the first real pointer event so the wheel
 	// center, laser line and cursor dot all share the same coordinate space.
+	// We still show it immediately at the OS cursor so a stationary mouse can
+	// see the wheel; the first pointer event then re-centers it exactly.
 	function armWheel(payload) {
 		if (!payload) return;
 		closeAll();
 		currentTarget = payload.target || null;
 		host.setInteractive(true);
+		const mode = payload.mode === "emote" ? "emote" : "ping";
+		const start = payload.point && Number.isFinite(payload.point.x) && Number.isFinite(payload.point.y)
+			? { x: payload.point.x, y: payload.point.y }
+			: null;
+		if (start) {
+			const target = localizeTarget(payload.target, start);
+			currentTarget = target;
+			controller.openWheel(mode, start, target);
+		}
 		const finish = (event) => {
 			if (!pendingOpen) return;
 			const point = { x: event.clientX, y: event.clientY };
 			const target = localizeTarget(payload.target, point);
-			const mode = payload.mode === "emote" ? "emote" : "ping";
 			cancelPending();
 			currentTarget = target;
 			controller.openWheel(mode, point, target);
