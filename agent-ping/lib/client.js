@@ -943,6 +943,11 @@ window.__ModuleLoader__.load({
 		0 0 40px rgba(10, 200, 185, .03);
 	overflow: hidden;
 }
+.ap-ask-card {
+	max-height: calc(100vh - 24px);
+	overflow-y: auto;
+	scrollbar-width: thin;
+}
 .ap-card-head {
 	display: flex;
 	align-items: center;
@@ -2661,9 +2666,9 @@ window.__ModuleLoader__.load({
 				this.openSessionPicker(options, onPick, anchor, color, keepTarget);
 			}
 
-			openSessionPicker(options, onPick, anchor, color, keepTarget = false) {
+			openSessionPicker(options, onPick, anchor, color, keepTarget = false, onCancel = null) {
 				this.hideToast();
-				this.pickerState = { onPick, keepTarget };
+				this.pickerState = { onPick, keepTarget, onCancel };
 				if (anchor && anchor.rect) this.showTarget(anchor, color);
 				this.el.picker.innerHTML = `
 <div class="ap-card ap-picker-card">
@@ -2702,7 +2707,7 @@ window.__ModuleLoader__.load({
 						const id = row.getAttribute("data-ap-picker-id");
 						const pick = this.pickerState && this.pickerState.onPick;
 						const keep = Boolean(this.pickerState && this.pickerState.keepTarget);
-						this.closePicker(keep);
+						this.closePicker(keep, true);
 						if (pick) pick(id);
 					});
 				});
@@ -2782,13 +2787,16 @@ window.__ModuleLoader__.load({
 				};
 			}
 
-			closePicker(keepTarget = false) {
+			closePicker(keepTarget = false, picked = false) {
 				const state = this.pickerState;
 				this.pickerState = null;
 				if (this.el.picker) this.el.picker.innerHTML = "";
-				if (!this.wheel && !this.askState && !this.settingsOpen) {
-					this.setRootState(null);
-					if (!keepTarget) this.hideTarget();
+				if (!this.wheel && !this.settingsOpen) {
+					this.setRootState(this.askState ? "ask" : null);
+					if (!keepTarget && !this.askState) this.hideTarget();
+				}
+				if (!picked && state && typeof state.onCancel === "function") {
+					try { state.onCancel(); } catch {}
 				}
 				return state;
 			}
@@ -2979,6 +2987,15 @@ window.__ModuleLoader__.load({
 				if (card) {
 					card.addEventListener("pointerdown", (event) => event.stopPropagation());
 				}
+				if (card && typeof ResizeObserver === "function") {
+					try { if (this.askObserver) this.askObserver.disconnect(); } catch {}
+					// The screenshot preview and the session list arrive after the
+					// first placement, growing the card past the bottom edge.
+					this.askObserver = new ResizeObserver(() => {
+						if (this.askState && this.el.ask && document.body.contains(card)) this.positionAsk();
+					});
+					this.askObserver.observe(card);
+				}
 				if (close) close.addEventListener("click", () => this.closeAsk());
 				if (send) send.addEventListener("click", () => this.submitAsk());
 				const sessionSelect = this.el.ask.querySelector("[data-ap-ask-session-select]");
@@ -3010,7 +3027,14 @@ window.__ModuleLoader__.load({
 						this.positionAsk();
 					});
 				});
-				if (this.globalMode) this.loadGlobalSessions();
+				if (this.globalMode) this.loadGlobalSessions().then(() => this.positionAsk());
+				const previewImage = this.el.ask.querySelector(".ap-ask-preview img");
+				if (previewImage) {
+					// The screenshot arrives after openAsk measured the card, so the
+					// card can grow past the bottom edge; re-clamp once it is decoded.
+					previewImage.addEventListener("load", () => this.positionAsk());
+					if (previewImage.complete) this.positionAsk();
+				}
 			}
 
 			/** Load session rows from the global host (bridge relay) with a short cache. */
@@ -3063,20 +3087,24 @@ window.__ModuleLoader__.load({
 				const target = this.askState.target;
 				const point = target && Number.isFinite(target.x) ? target : this.lastPointer;
 				const rect = card.getBoundingClientRect();
+				if (this.globalMode) {
+					// Pin the desktop composer to the top-right corner: the screenshot
+					// preview decodes after the first measure, and a mark near the
+					// bottom edge used to push the session selector off-screen.
+					this.el.ask.style.left = Math.max(12, innerWidth - rect.width - 16) + "px";
+					this.el.ask.style.top = "16px";
+					return;
+				}
 				const avoid = target && target.rect ? target.rect : null;
-				const preferred = this.globalMode
-					? { x: Math.max(12, (innerWidth - rect.width) / 2), y: Math.max(12, (innerHeight - rect.height) / 2) }
-					: { x: point.x + 24, y: point.y - 42 };
+				const preferred = { x: point.x + 24, y: point.y - 42 };
 				const spot = this.placeCard(rect.width, rect.height, avoid, preferred);
 				this.el.ask.style.left = spot.left + "px";
 				this.el.ask.style.top = spot.top + "px";
 			}
 
-			submitAsk() {
+			async submitAsk() {
 				if (!this.askState) return;
 				const input = this.el.ask.querySelector("[data-ap-ask-input]");
-				const send = this.el.ask.querySelector("[data-ap-ask-send]");
-				const label = this.el.ask.querySelector("[data-ap-ask-send-label]");
 				const question = input ? input.value.trim() : "";
 				if (!question) {
 					if (input) {
@@ -3088,11 +3116,7 @@ window.__ModuleLoader__.load({
 					return;
 				}
 				this.askState.question = question;
-				if (send) send.disabled = true;
-				if (label) label.textContent = "发送中";
 				const target = this.askState.target;
-				const targetSessionId = this.globalMode ? (this.askState.sessionId || "") : (this.askState.sessionId || this.sessionId);
-				const prompt = formatQuestionPrompt(question, target);
 				const item = {
 					id: "question",
 					label: "提问",
@@ -3100,9 +3124,43 @@ window.__ModuleLoader__.load({
 					icon: "question",
 					ask: true
 				};
+				if (this.globalMode) {
+					if (this.globalSessions.length === 0) {
+						await this.fetchGlobalSessions(true);
+						if (!this.askState) return;
+					}
+					const options = this.sessionOptions().slice();
+					const chosen = this.askState.sessionId;
+					const index = chosen ? options.findIndex((row) => row.id === chosen) : -1;
+					if (index > 0) options.unshift(options.splice(index, 1)[0]);
+					if (options.length > 1) {
+						this.openSessionPicker(options, (sessionId) => {
+							this.dispatchAsk(question, item, target, sessionId);
+						}, target, item.color, true, () => {
+							const sessionId = this.askState && this.askState.sessionId;
+							this.openAsk(target, item, sessionId);
+							const textarea = this.el.ask.querySelector("[data-ap-ask-input]");
+							if (textarea) {
+								textarea.value = question;
+								textarea.focus({ preventScroll: true });
+							}
+						});
+						return;
+					}
+				}
+				const targetSessionId = this.globalMode ? (this.askState.sessionId || "") : (this.askState.sessionId || this.sessionId);
+				this.dispatchAsk(question, item, target, targetSessionId);
+			}
+
+			dispatchAsk(question, item, target, sessionId) {
+				const send = this.el.ask.querySelector("[data-ap-ask-send]");
+				const label = this.el.ask.querySelector("[data-ap-ask-send-label]");
+				if (send) send.disabled = true;
+				if (label) label.textContent = "发送中";
+				const prompt = formatQuestionPrompt(question, target);
 				this.playSound("send");
 				this.ripple(target, item);
-				this.sendPrompt(prompt, item, target, targetSessionId).then((ok) => {
+				this.sendPrompt(prompt, item, target, sessionId).then((ok) => {
 					if (send) send.disabled = false;
 					if (label) label.textContent = "发送信号";
 					if (ok) this.closeAsk();
@@ -3115,6 +3173,7 @@ window.__ModuleLoader__.load({
 			closeAsk() {
 				if (!this.askState) return;
 				this.askState = null;
+				try { if (this.askObserver) { this.askObserver.disconnect(); this.askObserver = null; } } catch {}
 				if (this.el.ask) this.el.ask.innerHTML = "";
 				if (!this.wheel && !this.settingsOpen) {
 					this.hideTarget();
