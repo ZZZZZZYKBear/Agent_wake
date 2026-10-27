@@ -122,6 +122,9 @@
 	function armWheel(payload) {
 		if (!payload) return;
 		closeAll();
+		if (typeof controller.setGlobalSessions === "function") {
+			controller.setGlobalSessions(Array.isArray(payload.sessions) ? payload.sessions : []);
+		}
 		currentTarget = payload.target || null;
 		host.setInteractive(true);
 		const mode = payload.mode === "emote" ? "emote" : "ping";

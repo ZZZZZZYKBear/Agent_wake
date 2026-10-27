@@ -629,6 +629,15 @@ function normalizeScreenPoint(point, display) {
   return { x: display.bounds.x + localX / scale, y: display.bounds.y + localY / scale };
 }
 
+/** Read the session titles the DSH page publishes for the global picker. */
+async function readBridgeSessions() {
+  const target = readTransport();
+  if (!target || target.kind !== "dsh") return [];
+  const result = await request(target, "GET", "/sessions", undefined, 600);
+  if (!result.ok || !result.data || !Array.isArray(result.data.sessions)) return [];
+  return result.data.sessions;
+}
+
 async function openAtPoint(mode, point) {
   log("openAtPoint", mode, point);
   const display = screen.getDisplayNearestPoint(point);
@@ -641,13 +650,15 @@ async function openAtPoint(mode, point) {
   });
   if (currentWindow) hideCurrent();
   const target = await buildTarget(display, normalized);
+  const sessions = await readBridgeSessions();
   const win = await showOverlay(display, mode);
   if (!win) return;
   if (win.isDestroyed() || currentWindow !== win) return;
   win.webContents.send("open-wheel", {
     mode,
     point: { x: normalized.x - display.bounds.x, y: normalized.y - display.bounds.y },
-    target
+    target,
+    sessions
   });
 }
 

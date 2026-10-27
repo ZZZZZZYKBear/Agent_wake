@@ -1517,6 +1517,7 @@ window.__ModuleLoader__.load({
 				this.globalMode = Boolean(options.globalMode);
 				this.settings = loadSettings();
 				this.sessionId = null;
+				this.globalSessions = [];
 				this.bridgeStarted = false;
 				this.bridgeEpoch = 0;
 				this.bridgeSource = null;
@@ -2543,20 +2544,61 @@ window.__ModuleLoader__.load({
 						? formatEmotePrompt(item.emote, target, this.settings.includeContext)
 						: formatSignalPrompt(item, target, this.settings.includeContext);
 				this.playSound("send");
+				if (this.globalMode) {
+					this.fetchGlobalSessions().then((rows) => {
+						const options = rows.map((row) => ({
+							id: row.id,
+							title: row.title || row.id,
+							running: Boolean(row.running),
+							current: Boolean(row.current)
+						}));
+						if (options.length <= 1) {
+							this.ripple(target, item);
+							this.sendPrompt(prompt, item, target, options[0] && options[0].id);
+							return;
+						}
+						this.openSessionPicker(options, (sessionId) => {
+							this.ripple(target, item);
+							this.sendPrompt(prompt, item, target, sessionId);
+						}, target, item.color, false);
+					});
+					return;
+				}
 				this.chooseSession(target, item.color, (sessionId) => {
 					this.ripple(target, item);
 					this.sendPrompt(prompt, item, target, sessionId);
 				});
 			}
 
+			/** Session rows published by the DSH page and relayed through the bridge. */
+			setGlobalSessions(rows) {
+				this.globalSessions = Array.isArray(rows)
+					? rows
+						.filter((row) => row && typeof row.id === "string" && row.id && row.id !== "global-session")
+						.map((row) => ({
+							id: row.id,
+							title: typeof row.title === "string" && row.title ? row.title : row.id,
+							running: Boolean(row.running),
+							current: Boolean(row.current),
+							updatedAt: Number(row.updatedAt) || 0
+						}))
+						.slice(0, 60)
+					: [];
+			}
+
 			sessionOptions() {
+				if (this.globalMode && this.globalSessions.length > 0) {
+					return this.globalSessions
+						.slice()
+						.sort((a, b) => Number(b.current) - Number(a.current) || b.updatedAt - a.updatedAt);
+				}
 				const state = this.sessionListState();
 				const rows = [];
 				if (state && Array.isArray(state.ids)) {
 					for (const id of state.ids) {
 						const row = state.byId && state.byId[id];
 						if (!row) continue;
-						if (row.parentId || row.origin === "subagent") continue;
+						if (row.parentId || row.parentSessionId || row.origin === "subagent") continue;
 						rows.push({
 							id,
 							title: row.displayTitle || id,
@@ -2611,9 +2653,9 @@ window.__ModuleLoader__.load({
 			}
 
 			chooseSession(anchor, color, onPick, keepTarget = false) {
-				const options = this.globalMode ? [] : this.sessionOptions();
+				const options = this.sessionOptions();
 				if (options.length <= 1) {
-					onPick(this.sessionId);
+					onPick(options.length === 1 ? options[0].id : "");
 					return;
 				}
 				this.openSessionPicker(options, onPick, anchor, color, keepTarget);
@@ -2763,7 +2805,8 @@ window.__ModuleLoader__.load({
 						? { selector: target.selector, label: target.label, x: target.x, y: target.y }
 						: null
 				};
-				const targetId = this.globalMode ? (sessionId || "") : (sessionId || this.sessionId);
+				let targetId = this.globalMode ? (sessionId || "") : (sessionId || this.sessionId);
+				if (targetId === "global-session") targetId = "";
 				if (this.globalMode) {
 					const host = typeof window !== "undefined" ? window.agentPingHost : null;
 					if (!host || typeof host.sendSignal !== "function") {
@@ -2877,9 +2920,12 @@ window.__ModuleLoader__.load({
 				const askSessionId = this.globalMode ? "" : (sessionId || this.sessionId);
 				const askSession = this.sessionOptions().find((row) => row.id === askSessionId);
 				this.askState = { target, item: item || PINGS[0], sessionId: askSessionId };
-				const quickSessions = this.globalMode ? [] : this.sessionOptions();
+				const quickSessions = this.sessionOptions();
 				const sessionLine = this.globalMode
-					? '<label class="ap-ask-session">发送到：<select class="ap-ask-session-select" data-ap-ask-session-select><option value="">当前会话</option></select></label>'
+					? `<label class="ap-ask-session">发送到：<select class="ap-ask-session-select" data-ap-ask-session-select><option value="">当前会话</option>${quickSessions
+						.filter((row) => !row.current)
+						.map((row) => `<option value="${esc(row.id)}">${esc(row.title)}${row.running ? "（运行中）" : ""}</option>`)
+						.join("")}</select></label>`
 					: `<label class="ap-ask-session">发送到：<select class="ap-ask-session-select" data-ap-ask-session-select>${quickSessions
 						.map((row) => `<option value="${esc(row.id)}"${row.current ? " selected" : ""}>${esc(row.title)}${row.current ? "（当前）" : ""}</option>`)
 						.join("")}</select></label>`;
@@ -2967,17 +3013,30 @@ window.__ModuleLoader__.load({
 				if (this.globalMode) this.loadGlobalSessions();
 			}
 
+			/** Load session rows from the global host (bridge relay) with a short cache. */
+			async fetchGlobalSessions(force = false) {
+				const now = Date.now();
+				// The main process seeds rows with every open-wheel payload, so a
+				// non-empty list is already fresh; only the ask composer forces a
+				// refresh (e.g. after renaming a conversation).
+				if (!force && this.globalSessions.length > 0) return this.globalSessions;
+				try {
+					if (window.agentPingHost && typeof window.agentPingHost.listSessions === "function") {
+						const result = await window.agentPingHost.listSessions();
+						if (result && result.ok) {
+							this.setGlobalSessions(result.sessions || []);
+							this.globalSessionCacheAt = now;
+						}
+					}
+				} catch {}
+				return this.globalSessions;
+			}
+
 			/** Fill the global ask composer's session selector from the bridge list. */
 			async loadGlobalSessions() {
 				const select = this.el.ask && this.el.ask.querySelector("[data-ap-ask-session-select]");
 				if (!select) return;
-				let sessions = [];
-				try {
-					if (window.agentPingHost && typeof window.agentPingHost.listSessions === "function") {
-						const result = await window.agentPingHost.listSessions();
-						if (result && result.ok && Array.isArray(result.sessions)) sessions = result.sessions;
-					}
-				} catch {}
+				const sessions = await this.fetchGlobalSessions(true);
 				if (!this.askState || !document.body.contains(select)) return;
 				if (sessions.length === 0) {
 					select.disabled = true;
@@ -3032,7 +3091,7 @@ window.__ModuleLoader__.load({
 				if (send) send.disabled = true;
 				if (label) label.textContent = "发送中";
 				const target = this.askState.target;
-				const targetSessionId = this.askState.sessionId || this.sessionId;
+				const targetSessionId = this.globalMode ? (this.askState.sessionId || "") : (this.askState.sessionId || this.sessionId);
 				const prompt = formatQuestionPrompt(question, target);
 				const item = {
 					id: "question",
